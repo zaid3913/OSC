@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+
+    <title>قسم المصاريف - نظام إدارة المشاريع</title>
+    <link rel="stylesheet" href="expenses.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- مكتبة Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- شريط التنقل -->
+        <nav class="navbar">
+            <div class="nav-brand">
+                <a href="../index.html">
+                    <i class="fas fa-arrow-right"></i> العودة للرئيسية
+                </a>
+                <h2>قسم المصاريف</h2>
+            </div>
+            <div class="nav-actions">
+                <button class="btn btn-primary" id="addExpenseBtn">
+                    <i class="fas fa-plus-circle"></i> تسجيل مصروف جديد
+                </button>
+                <button class="btn btn-info" id="viewEmployeeReportBtn">
+                    <i class="fas fa-user-tie"></i> تقرير المصاريف للمخولين
+                </button>
+                <button class="btn btn-success" id="exportFilteredExcelBtn">
+                    <i class="fas fa-file-excel"></i> تصدير البيانات المعروضة
+                </button>
+            </div>
+        </nav>
+
+        <!-- إضافة المشروع الحالي -->
+        <div id="currentProjectInfo"></div>
+
+        <!-- ملخص المصاريف -->
+        <div class="summary-cards">
+            <div class="summary-card total-expenses">
+                <div class="summary-icon">
+                    <i class="fas fa-money-bill-wave"></i>
+                </div>
+                <div class="summary-content">
+                    <h4>إجمالي المصاريف</h4>
+                    <p id="totalExpensesAmount">٠ دينار</p>
+                </div>
+            </div>
+            <div class="summary-card salaries-expenses">
+                <div class="summary-icon">
+                    <i class="fas fa-user-tie"></i>
+                </div>
+                <div class="summary-content">
+                    <h4>رواتب الموظفين</h4>
+                    <p id="salariesAmount">٠ دينار</p>
+                </div>
+            </div>
+            <div class="summary-card other-expenses">
+                <div class="summary-icon">
+                    <i class="fas fa-tools"></i>
+                </div>
+                <div class="summary-content">
+                    <h4>مصاريف أخرى</h4>
+                    <p id="otherExpensesAmount">٠ دينار</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- فلاتر البحث -->
+        <div class="filter-section">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="ابحث بوصف المصروف أو اسم المخول...">
+            </div>
+            <div class="filter-options">
+                <select id="typeFilter">
+                    <option value="">جميع الأنواع</option>
+                    <option value="راتب">راتب</option>
+                    <option value="عدة">عدة</option>
+                    <option value="آليات">آليات</option>
+                    <option value="نقليات">نقليات</option>
+                    <option value="طعام">طعام</option>
+                    <option value="أجور">أجور يومية</option>
+                    <option value="مقاول ثانوي"> مقاول ثانوي</option>
+                    <option value="أخرى">أخرى</option>
+                </select>
+                <select id="employeeFilter">
+                    <option value="">جميع المخولين</option>
+                    <!-- سيتم ملؤها بواسطة JavaScript -->
+                </select>
+                <input type="month" id="monthFilter">
+            </div>
+        </div>
+
+        <!-- جدول المصاريف -->
+        <div class="table-container">
+            <table id="expensesTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>رقم الفاتورة</th>
+                        <th>نوع المصروف</th>
+                        <th>المبلغ</th>
+                        <th>المخول / المستلم</th>
+                        <th>الموظف</th>
+                        <th>التاريخ</th>
+                        <th>طريقة الدفع</th>
+                        <th>الوصف</th>
+                        <th>صورة الوصل</th>
+                        <th>ملاحظات</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="expensesTableBody">
+                    <!-- سيتم ملؤها بواسطة JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- نموذج إضافة/تعديل مصروف -->
+        <div class="modal" id="expenseModal">
+            <div class="modal-content wide-modal">
+                <div class="modal-header">
+                    <h3 id="modalTitle">تسجيل مصروف جديد</h3>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="expenseForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="expenseNumber">رقم الفاتورة *</label>
+                                <input type="text" id="expenseNumber" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="expenseType">نوع المصروف *</label>
+                                <select id="expenseType" required>
+                                    <option value="">اختر النوع</option>
+                                    <option value="راتب">راتب</option>
+                                    <option value="عدة">عدة</option>
+                                    <option value="آليات">آليات</option>
+                                    <option value="نقليات">نقليات</option>
+                                    <option value="طعام">طعام</option>
+                                    <option value="أجور">أجور يومية</option>
+                                    <option value="مقاول ثانوي"> مقاول ثانوي</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="expenseAmount">المبلغ (دينار عراقي) *</label>
+                                <input type="number" id="expenseAmount" min="0" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="expenseDate">تاريخ المصروف *</label>
+                                <input type="date" id="expenseDate" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="paymentMethod">طريقة الدفع *</label>
+                                <select id="paymentMethod" required>
+                                    <option value="">اختر طريقة الدفع</option>
+                                    <option value="نقدي">نقدي</option>
+                                    <option value="بطاقة ماستر"> بطاقة ماستر</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="recipient">المخول</label>
+                                <input type="text" id="recipient" required placeholder="اسم المخول أو المستلم">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="employeeName">اسم الموظف</label>
+                                <input type="text" id="employeeName" required placeholder="اسم الموظف ">
+                            </div>
+                            <div class="form-group">
+                                <!-- يمكن ترك هذا فارغاً -->
+                            </div>
+                        </div>
+
+                        <!-- حقل رفع الصورة -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="expenseImage">صورة الوصل (اختياري)</label>
+                                <div class="upload-info">
+                                    <i class="fas fa-info-circle"></i>
+                                    <span>الصور تخزن في ImgBB السحابي مجاناً</span>
+                                </div>
+                                <input type="file" id="expenseImage" accept="image/*" style="display: none;">
+                                <div class="file-upload-area" id="fileUploadArea">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    <p>اسحب وأفلت الصورة هنا أو <span class="browse-link">تصفح</span></p>
+                                    <p class="file-info">JPG, PNG, GIF (حد أقصى: 5MB)</p>
+                                </div>
+                                <div class="image-preview" id="imagePreview" style="display: none;">
+                                    <div class="preview-container">
+                                        <img id="previewImage" src="" alt="معاينة الصورة">
+                                        <button type="button" class="btn btn-danger btn-sm" id="removeImageBtn">
+                                            <i class="fas fa-trash"></i> إزالة
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="expenseDescription">وصف المصروف *</label>
+                            <textarea id="expenseDescription" rows="3" required placeholder="وصف تفصيلي للمصروف..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="expenseNotes">ملاحظات إضافية</label>
+                            <textarea id="expenseNotes" rows="2" placeholder="ملاحظات إضافية..."></textarea>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelBtn">إلغاء</button>
+                            <button type="submit" class="btn btn-primary" id="saveExpenseBtn">حفظ المصروف</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- نموذج تقرير المخولين -->
+        <div class="modal" id="employeeReportModal">
+            <div class="modal-content wide-modal">
+                <div class="modal-header">
+                    <h3 id="reportModalTitle">تقرير المصاريف للمخولين</h3>
+                    <button class="close-btn" id="closeReportModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="report-filters">
+                        <select id="reportEmployeeFilter">
+                            <option value="">جميع المخولين</option>
+                        </select>
+                        <input type="month" id="reportMonthFilter">
+                        <button class="btn btn-primary" id="generateReportBtn">توليد التقرير</button>
+                        <button class="btn btn-success" id="exportFilteredReportBtn">
+                            <i class="fas fa-file-excel"></i> تصدير التقرير
+                        </button>
+                    </div>
+                    
+                    <div class="employee-summary" id="employeeSummary">
+                        <!-- سيتم ملؤها بواسطة JavaScript -->
+                    </div>
+                    
+                    <div class="report-details">
+                        <h4>تفاصيل المصاريف</h4>
+                        <div class="table-container-small">
+                            <table id="employeeExpensesTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>التاريخ</th>
+                                        <th>نوع المصروف</th>
+                                        <th>المبلغ</th>
+                                         <th>الموظف</th>
+                                        <th>الوصف</th>
+                                        <th>طريقة الدفع</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="employeeExpensesBody">
+                                    <!-- سيتم ملؤها بواسطة JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- نافذة عرض الصورة -->
+        <div class="modal" id="imageViewModal">
+            <div class="modal-content image-modal">
+                <div class="modal-header">
+                    <h3>صورة الوصل</h3>
+                    <button class="close-btn" id="closeImageViewModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="image-view-container">
+                        <img id="fullImageView" src="" alt="صورة الوصل">
+                        <div class="image-meta" id="imageMetadata">
+                            <!-- سيتم ملؤها بواسطة JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- تضمين Firebase Config أولاً -->
+    <script src="../firebase-config.js"></script>
+    <!-- ثم تضمين ملف JavaScript الخاص بالمصاريف -->
+    <script src="expenses-firebase.js"></script>
+</body>
+</html>

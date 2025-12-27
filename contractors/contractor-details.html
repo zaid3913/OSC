@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="format-detection" content="telephone=no">
+<meta name="msapplication-tap-highlight" content="no">
+
+    <title>تفاصيل المقاول</title>
+    <link rel="stylesheet" href="contractors.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- رأس الصفحة -->
+        <header class="page-header">
+            <button class="btn btn-back" onclick="goBackToContractors()">
+                <i class="fas fa-arrow-right"></i> العودة
+            </button>
+            <h1><i class="fas fa-hard-hat"></i> تفاصيل المقاول</h1>
+            <div class="page-actions">
+                <button class="btn btn-primary" onclick="openPaymentModalPage()">
+                    <i class="fas fa-plus"></i> إضافة دفعة
+                </button>
+                <button class="btn btn-secondary" onclick="goToEditContractor()">
+                    <i class="fas fa-edit"></i> تعديل
+                </button>
+            </div>
+        </header>
+
+        <!-- معلومات المقاول -->
+        <div class="detail-card">
+            <div class="detail-header">
+                <div class="contractor-avatar">
+                    <i class="fas fa-hard-hat"></i>
+                </div>
+                <div class="contractor-info">
+                    <h2 id="detailContractorName">-</h2>
+                    <p><i class="fas fa-phone"></i> <span id="detailContractorPhone">-</span></p>
+                    <p><i class="fas fa-tools"></i> <span id="detailWorkType">-</span></p>
+                </div>
+                <div class="contractor-status">
+                    <span class="status-badge" id="detailStatus">-</span>
+                </div>
+            </div>
+            
+            <div class="detail-stats">
+                <div class="stat-item">
+                    <h3>قيمة العقد</h3>
+                    <p id="detailContractValue">0 د.ع</p>
+                </div>
+                <div class="stat-item">
+                    <h3>المدفوع</h3>
+                    <p id="detailPaidAmount">0 د.ع</p>
+                </div>
+                <div class="stat-item">
+                    <h3>المتبقي</h3>
+                    <p id="detailRemainingAmount">0 د.ع</p>
+                </div>
+                <div class="stat-item">
+                    <h3>تاريخ العقد</h3>
+                    <p id="detailContractDate">-</p>
+                </div>
+            </div>
+            
+            <div class="detail-description">
+                <h3><i class="fas fa-file-alt"></i> وصف العمل المتفق عليه</h3>
+                <p id="detailDescription">لا يوجد وصف</p>
+            </div>
+        </div>
+
+        <!-- جدول الدفعات -->
+        <div class="data-section">
+            <div class="section-header">
+                <h2><i class="fas fa-history"></i> سجل الدفعات</h2>
+                <button class="btn btn-primary" onclick="openPaymentModalPage()">
+                    <i class="fas fa-plus"></i> إضافة دفعة جديدة
+                </button>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>تاريخ الدفعة</th>
+                            <th>المبلغ</th>
+                            <th>نوع الدفعة</th>
+                            <th>طريقة الدفع</th>
+                            <th>الوصف</th>
+                            <th>الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paymentsTableBody">
+                        <!-- سيتم تعبئته بالبيانات -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="no-data" id="noPaymentsMessage" style="display: none;">
+                <i class="fas fa-money-bill-wave"></i>
+                <p>لا توجد دفعات مسجلة لهذا المقاول</p>
+                <button class="btn btn-primary" onclick="openPaymentModalPage()">
+                    <i class="fas fa-plus"></i> إضافة أول دفعة
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نموذج إضافة دفعة -->
+    <div id="paymentModalPage" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-money-check-alt"></i> إضافة دفعة للمقاول</h3>
+                <button class="btn-close" onclick="closePaymentModalPage()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="paymentFormPage">
+                    <div class="form-group">
+                        <label><i class="fas fa-user"></i> اسم المقاول</label>
+                        <p id="paymentContractorNamePage" class="info-text">-</p>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="paymentAmountPage"><i class="fas fa-money-bill"></i> مبلغ الدفعة (دينار عراقي) *</label>
+                            <input type="number" id="paymentAmountPage" min="0" step="1000" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="paymentDatePage"><i class="fas fa-calendar"></i> تاريخ الدفعة *</label>
+                            <input type="date" id="paymentDatePage" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="paymentMethodPage"><i class="fas fa-credit-card"></i> طريقة الدفع</label>
+                            <select id="paymentMethodPage">
+                                <option value="cash">نقداً</option>
+                                <option value="bank">حوالة بنكية</option>
+                                <option value="check">شيك</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="paymentTypePage"><i class="fas fa-list"></i> نوع الدفعة</label>
+                            <select id="paymentTypePage">
+                                <option value="advance">دفعة مقدمة</option>
+                                <option value="progress">دفعة مرحلة</option>
+                                <option value="final">دفعة نهائية</option>
+                                <option value="other">أخرى</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="paymentDescriptionPage"><i class="fas fa-file-alt"></i> وصف الدفعة</label>
+                        <textarea id="paymentDescriptionPage" rows="3" placeholder="وصف الدفعة والمرحلة المدفوعة..."></textarea>
+                    </div>
+                    
+                    <div class="info-box">
+                        <p><i class="fas fa-info-circle"></i> سوف يتم خصم المبلغ من رصيد المشروع الحالي</p>
+                        <p id="currentProjectBalanceInfoPage">جاري التحميل...</p>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closePaymentModalPage()">إلغاء</button>
+                        <button type="submit" class="btn btn-primary">إضافة الدفعة</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="../firebase-config.js"></script>
+    <script>
+    // متغيرات خاصة بهذه الصفحة فقط
+    var pageContractorId = null;
+    
+    // ===========================================
+    // دوال التنقل
+    // ===========================================
+    function goBackToContractors() {
+        window.location.href = 'contractors.html';
+    }
+    
+    function goToEditContractor() {
+        if (!pageContractorId) return;
+        window.location.href = 'contractors.html?edit=' + pageContractorId;
+    }
+    
+    // ===========================================
+    // تهيئة الصفحة
+    // ===========================================
+    document.addEventListener('DOMContentLoaded', function() {
+        try {
+            // الحصول على معرّف المقاول من الرابط
+            const urlParams = new URLSearchParams(window.location.search);
+            pageContractorId = urlParams.get('id');
+            
+            if (!pageContractorId) {
+                window.location.href = 'contractors.html';
+                return;
+            }
+            
+            // تهيئة الأحداث
+            initPageEvents();
+            
+            // تحميل البيانات بعد تأخير قصير
+            setTimeout(() => {
+                loadContractorDetailsPage();
+                loadContractorPaymentsPage();
+            }, 300);
+            
+        } catch (error) {
+            console.error('خطأ في تهيئة الصفحة:', error);
+            alert('تعذر تحميل الصفحة');
+        }
+    });
+    
+    function initPageEvents() {
+        // إضافة حدث للنموذج
+        const paymentForm = document.getElementById('paymentFormPage');
+        if (paymentForm) {
+            paymentForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                savePaymentPage();
+            });
+        }
+        
+        // تعيين تاريخ اليوم في نموذج الدفعة
+        const today = new Date().toISOString().split('T')[0];
+        const dateInput = document.getElementById('paymentDatePage');
+        if (dateInput) {
+            dateInput.value = today;
+        }
+    }
+    
+    // ===========================================
+    // دوال تحميل البيانات
+    // ===========================================
+    async function loadContractorDetailsPage() {
+        try {
+            if (!pageContractorId) return;
+            
+            // انتظر تحميل Firebase
+            await waitForFirebase();
+            
+            // الحصول على قاعدة البيانات
+            const db = await getFirestorePage();
+            const projectManager = getProjectManagerPage();
+            
+            if (!projectManager.hasCurrentProject()) {
+                showMessagePage('error', 'الرجاء اختيار مشروع أولاً');
+                return;
+            }
+            
+            const projectId = projectManager.getCurrentProject().id;
+            
+            const doc = await db.collection('projects').doc(projectId)
+                .collection('contractors')
+                .doc(pageContractorId)
+                .get();
+            
+            if (doc.exists) {
+                const contractor = doc.data();
+                
+                // تحديث الواجهة
+                document.getElementById('detailContractorName').textContent = contractor.name || '-';
+                document.getElementById('detailContractorPhone').textContent = contractor.phone || '-';
+                document.getElementById('detailWorkType').textContent = contractor.workType || '-';
+                document.getElementById('detailContractValue').textContent = formatCurrencyPage(contractor.contractValue || 0);
+                document.getElementById('detailPaidAmount').textContent = formatCurrencyPage(contractor.paidAmount || 0);
+                document.getElementById('detailRemainingAmount').textContent = 
+                    formatCurrencyPage((contractor.contractValue || 0) - (contractor.paidAmount || 0));
+                
+                // تنسيق التاريخ
+                let contractDate = '-';
+                if (contractor.contractDate) {
+                    const date = new Date(contractor.contractDate);
+                    contractDate = date.toLocaleDateString('ar-IQ');
+                }
+                document.getElementById('detailContractDate').textContent = contractDate;
+                
+                document.getElementById('detailDescription').textContent = contractor.contractDescription || 'لا يوجد وصف';
+                
+                // تحديث الحالة
+                const statusElement = document.getElementById('detailStatus');
+                if (statusElement) {
+                    statusElement.textContent = getStatusTextPage(contractor.contractStatus);
+                    statusElement.className = `status-badge status-${contractor.contractStatus || 'active'}`;
+                }
+                
+                // تحديث اسم المقاول في النموذج
+                const nameElement = document.getElementById('paymentContractorNamePage');
+                if (nameElement) {
+                    nameElement.textContent = contractor.name || 'مقاول';
+                }
+            }
+            
+        } catch (error) {
+            console.error('خطأ في تحميل تفاصيل المقاول:', error);
+            showMessagePage('error', 'تعذر تحميل تفاصيل المقاول');
+        }
+    }
+    
+    async function loadContractorPaymentsPage() {
+        try {
+            if (!pageContractorId) return;
+            
+            const db = await getFirestorePage();
+            const projectManager = getProjectManagerPage();
+            
+            if (!projectManager.hasCurrentProject()) {
+                return;
+            }
+            
+            const projectId = projectManager.getCurrentProject().id;
+            const paymentsTableBody = document.getElementById('paymentsTableBody');
+            const noPaymentsMessage = document.getElementById('noPaymentsMessage');
+            
+            if (!paymentsTableBody) return;
+            
+            paymentsTableBody.innerHTML = '';
+            
+            const snapshot = await db.collection('projects').doc(projectId)
+                .collection('contractorPayments')
+                .where('contractorId', '==', pageContractorId)
+                .orderBy('paymentDate', 'desc')
+                .get();
+            
+            if (snapshot.empty) {
+                paymentsTableBody.style.display = 'none';
+                if (noPaymentsMessage) noPaymentsMessage.style.display = 'block';
+                return;
+            }
+            
+            if (noPaymentsMessage) noPaymentsMessage.style.display = 'none';
+            paymentsTableBody.style.display = 'table-row-group';
+            
+            let index = 1;
+            snapshot.forEach(doc => {
+                const payment = doc.data();
+                const paymentId = doc.id;
+                
+                // تنسيق التاريخ
+                let paymentDate = '-';
+                if (payment.paymentDate) {
+                    const date = new Date(payment.paymentDate);
+                    paymentDate = date.toLocaleDateString('ar-IQ');
+                }
+                
+                let paymentTypeText = 'دفعة مقدمة';
+                if (payment.paymentType === 'progress') paymentTypeText = 'دفعة مرحلة';
+                if (payment.paymentType === 'final') paymentTypeText = 'دفعة نهائية';
+                if (payment.paymentType === 'other') paymentTypeText = 'أخرى';
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index}</td>
+                    <td>${paymentDate}</td>
+                    <td>${formatCurrencyPage(payment.amount || 0)}</td>
+                    <td>${paymentTypeText}</td>
+                    <td>${payment.paymentMethod === 'cash' ? 'نقداً' : 
+                         payment.paymentMethod === 'bank' ? 'حوالة بنكية' : 'شيك'}</td>
+                    <td>${payment.description || '-'}</td>
+                    <td>
+                        <button class="btn-icon btn-delete" onclick="deletePaymentPage('${paymentId}')" title="حذف">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+                
+                paymentsTableBody.appendChild(row);
+                index++;
+            });
+            
+        } catch (error) {
+            console.error('خطأ في تحميل دفعات المقاول:', error);
+        }
+    }
+    
+    // ===========================================
+    // دوال النماذج
+    // ===========================================
+    function openPaymentModalPage() {
+        if (!pageContractorId) {
+            showMessagePage('error', 'لم يتم تحديد مقاول');
+            return;
+        }
+        
+        const modal = document.getElementById('paymentModalPage');
+        if (!modal) {
+            showMessagePage('error', 'لم يتم العثور على نموذج الدفعة');
+            return;
+        }
+        
+        // تحديث معلومات الرصيد
+        updateCurrentBalanceInfoPage();
+        
+        modal.style.display = 'block';
+    }
+    
+    function closePaymentModalPage() {
+        const modal = document.getElementById('paymentModalPage');
+        if (modal) {
+            modal.style.display = 'none';
+            const form = document.getElementById('paymentFormPage');
+            if (form) {
+                form.reset();
+                
+                // إعادة تعيين تاريخ اليوم
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('paymentDatePage').value = today;
+            }
+        }
+    }
+    
+    async function updateCurrentBalanceInfoPage() {
+        const balanceElement = document.getElementById('currentProjectBalanceInfoPage');
+        if (!balanceElement) return;
+        
+        try {
+            let balance = 0;
+            
+            // استخدم الدوال المركزية للرصيد
+            if (window.firebaseConfig && window.firebaseConfig.calculateAccurateBalance) {
+                balance = await window.firebaseConfig.calculateAccurateBalance();
+            } else if (window.appFunctions && window.appFunctions.calculateBalanceOnce) {
+                balance = await window.appFunctions.calculateBalanceOnce();
+            } else if (window.firebaseConfig && window.firebaseConfig.getCurrentProjectBalance) {
+                balance = await window.firebaseConfig.getCurrentProjectBalance();
+            }
+            
+            // تلوين الرصيد حسب القيمة
+            let balanceColor = '#2c3e50';
+            let balanceText = formatCurrencyPage(balance);
+            
+            if (balance > 0) {
+                balanceColor = '#27ae60';
+                balanceText = '➕ ' + balanceText;
+            } else if (balance < 0) {
+                balanceColor = '#e74c3c';
+                balanceText = '➖ ' + balanceText.replace('-', '');
+            }
+            
+            balanceElement.innerHTML = 
+                `رصيد المشروع الحالي: <strong style="color: ${balanceColor}">${balanceText}</strong>`;
+                
+        } catch (error) {
+            console.error('خطأ في تحديث معلومات الرصيد:', error);
+            balanceElement.innerHTML = 'غير متوفر';
+        }
+    }
+    
+    async function savePaymentPage() {
+        try {
+            const amountInput = document.getElementById('paymentAmountPage');
+            const dateInput = document.getElementById('paymentDatePage');
+            
+            if (!amountInput || !dateInput) {
+                showMessagePage('error', 'الحقول المطلوبة غير موجودة');
+                return;
+            }
+            
+            const amount = parseFloat(amountInput.value);
+            const paymentDate = dateInput.value;
+            
+            if (!amount || amount <= 0) {
+                showMessagePage('error', 'الرجاء إدخال مبلغ صحيح');
+                return;
+            }
+            
+            if (!pageContractorId) {
+                showMessagePage('error', 'لم يتم تحديد مقاول');
+                return;
+            }
+            
+            // التحقق من الرصيد وعرض تحذير فقط بدون منع
+            let currentBalance = 0;
+            let balanceColor = '#2c3e50';
+            
+            // حساب الرصيد الحالي
+            if (window.firebaseConfig && window.firebaseConfig.calculateAccurateBalance) {
+                currentBalance = await window.firebaseConfig.calculateAccurateBalance();
+            } else if (window.appFunctions && window.appFunctions.calculateBalanceOnce) {
+                currentBalance = await window.appFunctions.calculateBalanceOnce();
+            }
+            
+            // تلوين الرصيد حسب القيمة
+            if (currentBalance > 0) {
+                balanceColor = '#27ae60';
+            } else if (currentBalance < 0) {
+                balanceColor = '#e74c3c';
+            }
+            
+            // التحذير فقط بدون منع
+            if (amount > currentBalance) {
+                const confirmation = confirm(
+                    `⚠️  تحذير:\n` +
+                    `المبلغ المطلوب: ${formatCurrencyPage(amount)}\n` +
+                    `الرصيد الحالي: ${formatCurrencyPage(currentBalance)}\n` +
+                    `\nالرصيد غير كافي. هل تريد المتابعة؟\n` +
+                    `سيصبح الرصيد بعد الدفعة: ${formatCurrencyPage(currentBalance - amount)}`
+                );
+                
+                if (!confirmation) {
+                    return;
+                }
+            }
+            
+            const db = await getFirestorePage();
+            const projectManager = getProjectManagerPage();
+            
+            if (!projectManager.hasCurrentProject()) {
+                showMessagePage('error', 'الرجاء اختيار مشروع أولاً');
+                return;
+            }
+            
+            const projectId = projectManager.getCurrentProject().id;
+            
+            // بيانات الدفعة
+            const paymentData = {
+                contractorId: pageContractorId,
+                amount: amount,
+                paymentDate: paymentDate,
+                paymentMethod: document.getElementById('paymentMethodPage').value,
+                paymentType: document.getElementById('paymentTypePage').value,
+                description: document.getElementById('paymentDescriptionPage').value.trim(),
+                createdAt: new Date().toISOString(),
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            // إضافة سجل الدفعة
+            await db.collection('projects').doc(projectId)
+                .collection('contractorPayments')
+                .add(paymentData);
+            
+            // تحديث المبلغ المدفوع للمقاول
+            const contractorRef = db.collection('projects').doc(projectId)
+                .collection('contractors')
+                .doc(pageContractorId);
+            
+            const contractorDoc = await contractorRef.get();
+            if (contractorDoc.exists) {
+                const currentPaid = contractorDoc.data().paidAmount || 0;
+                await contractorRef.update({
+                    paidAmount: currentPaid + amount,
+                    updatedAt: new Date().toISOString()
+                });
+            }
+            
+            // إعادة حساب الرصيد الشامل باستخدام الدوال المركزية
+            let newBalance = currentBalance - amount;
+            if (window.firebaseConfig && window.firebaseConfig.calculateAccurateBalance) {
+                newBalance = await window.firebaseConfig.calculateAccurateBalance();
+            } else if (window.firebaseConfig && window.firebaseConfig.updateTotalBalance) {
+                newBalance = await window.firebaseConfig.updateTotalBalance();
+            } else {
+                // طريقة بديلة مباشرة لتحديث الرصيد
+                const projectRef = db.collection('projects').doc(projectId);
+                await projectRef.update({
+                    currentBalance: newBalance,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+            
+            // رسالة نجاح مع إظهار الرصيد الجديد
+            let messageType = 'success';
+            let message = `✅ تم إضافة دفعة بقيمة ${formatCurrencyPage(amount)}\nالرصيد الحالي: ${formatCurrencyPage(newBalance)}`;
+            
+            if (newBalance < 0) {
+                messageType = 'warning';
+                message = `⚠️ تم إضافة دفعة بقيمة ${formatCurrencyPage(amount)}\n` +
+                         `⚠️ الرصيد الحالي أصبح سالبًا: ${formatCurrencyPage(newBalance)}`;
+            }
+            
+            showMessagePage(messageType, message);
+            closePaymentModalPage();
+            
+            // إعادة تحميل البيانات
+            await loadContractorDetailsPage();
+            await loadContractorPaymentsPage();
+            
+            // تحديث شريط الرصيد في الصفحة الرئيسية
+            if (window.appFunctions && window.appFunctions.updateBalanceDisplay) {
+                window.appFunctions.updateBalanceDisplay(true);
+            }
+            
+            // تحديث معلومات الرصيد في النموذج
+            setTimeout(updateCurrentBalanceInfoPage, 500);
+            
+        } catch (error) {
+            console.error('خطأ في إضافة الدفعة:', error);
+            showMessagePage('error', 'تعذر إضافة الدفعة: ' + error.message);
+        }
+    }
+    
+    async function deletePaymentPage(paymentId) {
+        if (!confirm('هل أنت متأكد من حذف هذه الدفعة؟')) {
+            return;
+        }
+        
+        try {
+            const db = await getFirestorePage();
+            const projectManager = getProjectManagerPage();
+            
+            if (!projectManager.hasCurrentProject()) {
+                showMessagePage('error', 'الرجاء اختيار مشروع أولاً');
+                return;
+            }
+            
+            const projectId = projectManager.getCurrentProject().id;
+            
+            // الحصول على بيانات الدفعة
+            const paymentDoc = await db.collection('projects').doc(projectId)
+                .collection('contractorPayments')
+                .doc(paymentId)
+                .get();
+            
+            if (!paymentDoc.exists) {
+                throw new Error('الدفعة غير موجودة');
+            }
+            
+            const paymentData = paymentDoc.data();
+            const amount = paymentData.amount || 0;
+            
+            // تحديث المبلغ المدفوع للمقاول
+            const contractorRef = db.collection('projects').doc(projectId)
+                .collection('contractors')
+                .doc(pageContractorId);
+            
+            const contractorDoc = await contractorRef.get();
+            if (contractorDoc.exists) {
+                const currentPaid = contractorDoc.data().paidAmount || 0;
+                const newPaidAmount = Math.max(0, currentPaid - amount);
+                await contractorRef.update({
+                    paidAmount: newPaidAmount,
+                    updatedAt: new Date().toISOString()
+                });
+            }
+            
+            // حذف الدفعة
+            await paymentDoc.ref.delete();
+            
+            // إعادة حساب الرصيد الشامل باستخدام الدوال المركزية
+            if (window.firebaseConfig && window.firebaseConfig.calculateAccurateBalance) {
+                await window.firebaseConfig.calculateAccurateBalance();
+            } else if (window.firebaseConfig && window.firebaseConfig.updateTotalBalance) {
+                await window.firebaseConfig.updateTotalBalance();
+            }
+            
+            // تحديث العرض
+            if (window.appFunctions && window.appFunctions.updateBalanceDisplay) {
+                window.appFunctions.updateBalanceDisplay(true);
+            }
+            
+            showMessagePage('success', `تم حذف الدفعة بقيمة ${formatCurrencyPage(amount)}`);
+            
+            // إعادة تحميل البيانات
+            await loadContractorDetailsPage();
+            await loadContractorPaymentsPage();
+            
+        } catch (error) {
+            console.error('خطأ في حذف الدفعة:', error);
+            showMessagePage('error', 'تعذر حذف الدفعة');
+        }
+    }
+    
+    // ===========================================
+    // دوال Firebase المساعدة
+    // ===========================================
+    async function waitForFirebase() {
+        return new Promise((resolve) => {
+            const checkFirebase = setInterval(() => {
+                if (typeof firebase !== 'undefined' && firebase.apps.length > 0) {
+                    clearInterval(checkFirebase);
+                    resolve();
+                }
+            }, 100);
+            
+            // مهلة 5 ثواني
+            setTimeout(() => {
+                clearInterval(checkFirebase);
+                resolve();
+            }, 5000);
+        });
+    }
+    
+    async function getFirestorePage() {
+        if (typeof firebase === 'undefined') {
+            throw new Error('Firebase لم يتم تحميله');
+        }
+        
+        if (firebase.apps.length === 0) {
+            if (window.firebaseConfig && window.firebaseConfig.initializeFirebase) {
+                window.firebaseConfig.initializeFirebase();
+            }
+            await waitForFirebase();
+        }
+        
+        return firebase.firestore();
+    }
+    
+    function getProjectManagerPage() {
+        if (!window.firebaseConfig || !window.firebaseConfig.projectManager) {
+            throw new Error('مدير المشروع غير متوفر');
+        }
+        return window.firebaseConfig.projectManager;
+    }
+    
+    // ===========================================
+    // دوال مساعدة
+    // ===========================================
+    function formatCurrencyPage(amount) {
+        try {
+            if (window.firebaseConfig && window.firebaseConfig.formatCurrency) {
+                return window.firebaseConfig.formatCurrency(amount);
+            }
+            return new Intl.NumberFormat('ar-IQ', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount) + ' د.ع';
+        } catch (error) {
+            console.error('خطأ في تنسيق العملة:', error);
+            return (amount || 0) + ' د.ع';
+        }
+    }
+    
+    function getStatusTextPage(status) {
+        const statusMap = {
+            'active': 'نشط',
+            'completed': 'مكتمل',
+            'pending': 'معلق',
+            'cancelled': 'ملغي'
+        };
+        return statusMap[status] || 'نشط';
+    }
+    
+    function showMessagePage(type, message) {
+        try {
+            if (window.firebaseConfig && window.firebaseConfig.showMessage) {
+                window.firebaseConfig.showMessage(type, message);
+            } else {
+                console.log(type + ': ' + message);
+                
+                // عرض رسالة منسقة في حال عدم وجود firebaseConfig
+                alert(message);
+            }
+        } catch (error) {
+            console.error('خطأ في إظهار الرسالة:', error);
+            alert(message);
+        }
+    }
+</script>
+</body>
+</html>

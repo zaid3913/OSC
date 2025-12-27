@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>قسم الدفعات والسلف - نظام إدارة المشاريع</title>
+    <link rel="stylesheet" href="advances.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <!-- مكتبة SheetJS لتصدير Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- شريط التنقل -->
+        <nav class="navbar">
+            <div class="nav-brand">
+                <a href="../index.html">
+                    <i class="fas fa-arrow-right"></i> العودة للرئيسية
+                </a>
+                <h2>قسم الدفعات والسلف</h2>
+            </div>
+            <div class="nav-actions">
+                <button class="btn btn-primary" id="addReceiveBtn">
+                    <i class="fas fa-download"></i> تسجيل دفعة مستلمة
+                </button>
+                <button class="btn btn-success" id="addPaymentBtn">
+                    <i class="fas fa-upload"></i> تسجيل سلفة مدفوعة
+                </button>
+                <!-- زر تصدير Excel -->
+                <button class="btn btn-export" id="exportExcelBtn">
+                    <i class="fas fa-file-excel"></i> تصدير إلى Excel
+                </button>
+            </div>
+        </nav>
+
+        <!-- إضافة المشروع الحالي -->
+        <div id="currentProjectInfo"></div>
+
+        <!-- ملخص الحسابات -->
+        <div class="summary-cards">
+            <div class="summary-card total-received">
+                <div class="summary-icon">
+                    <i class="fas fa-money-bill-wave"></i>
+                </div>
+                <div class="summary-content">
+                    <h4>الرصيد الحالي</h4>
+                    <p id="currentBalanceAmount">٠ دينار</p>
+                </div>
+            </div>
+            <div class="summary-card total-received">
+                <div class="summary-icon">
+                    <i class="fas fa-download"></i>
+                </div>
+                <div class="summary-content">
+                    <h4>إجمالي الدفعات المستلمة</h4>
+                    <p id="totalReceivedAmount">٠ دينار</p>
+                </div>
+            </div>
+            <div class="summary-card total-paid">
+                <div class="summary-icon">
+                    <i class="fas fa-upload"></i>
+                </div>
+                <div class="summary-content">
+                    <h4>إجمالي السلف المدفوعة</h4>
+                    <p id="totalPaidAmount">٠ دينار</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- فلاتر البحث -->
+        <div class="filter-section">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="ابحث باسم الجهة أو المخول...">
+            </div>
+            <div class="filter-options">
+                <select id="typeFilter">
+                    <option value="">جميع الأنواع</option>
+                    <option value="دفعة">دفعة مستلمة</option>
+                    <option value="سلف">سلفة مدفوعة</option>
+                </select>
+                <select id="statusFilter">
+                    <option value="">جميع الحالات</option>
+                    <option value="مدفوعة">مدفوعة</option>
+                    <option value="مستلمة">مستلمة</option>
+                    <option value="مسدد بالكامل">مسدد بالكامل</option>
+                    <option value="مسدد جزئياً">مسدد جزئياً</option>
+                    <option value="غير مسدد">غير مسدد</option>
+                </select>
+                <input type="month" id="monthFilter" placeholder="الشهر">
+            </div>
+        </div>
+
+        <!-- جدول الدفعات والسلف -->
+        <div class="table-container">
+            <table id="advancesTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>رقم العملية</th>
+                        <th>النوع</th>
+                        <th>اسم الجهة / المخول</th>
+                        <th>المبلغ</th>
+                        <th>المسترد</th>
+                        <th>المتبقي</th>
+                        <th>التاريخ</th>
+                        <th>تاريخ الاستحقاق</th>
+                        <th>الحالة</th>
+                        <th>ملاحظات</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="advancesTableBody">
+                    <!-- سيتم ملؤها بواسطة JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- نموذج إضافة دفعة مستلمة -->
+        <div class="modal" id="receivePaymentModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="receiveModalTitle">تسجيل دفعة مستلمة</h3>
+                    <button class="close-btn" id="closeReceiveModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="receivePaymentForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="receivePaymentNumber">رقم الدفعة *</label>
+                                <input type="text" id="receivePaymentNumber" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="receivePaymentType">نوع الدفعة *</label>
+                                <select id="receivePaymentType" required>
+                                    <option value="">اختر نوع الدفعة</option>
+                                    <option value="دفعة مقدمة">دفعة مقدمة</option>
+                                    <option value="دفعة تشغيلية">دفعة تشغيلية</option>
+                                    <option value="دفعة مالية">دفعة مالية</option>
+                                    <option value="دفعة أخرى">دفعة أخرى</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="receivePaymentName">اسم الجهة الدافعة *</label>
+                                <input type="text" id="receivePaymentName" required placeholder="مثال: البنك المركزي أو وزارة المالية">
+                            </div>
+                            <div class="form-group">
+                                <label for="receiveAmount">المبلغ المستلم (دينار عراقي) *</label>
+                                <input type="number" id="receiveAmount" min="0" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="receiveDate">تاريخ الاستلام *</label>
+                                <input type="date" id="receiveDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="receiveLocation">مكان الاستلام</label>
+                                <select id="receiveLocation">
+                                    <option value="">اختر مكان الاستلام</option>
+                                    <option value="مقر الشركة">مقر الشركة</option>
+                                    <option value="فرع البنك">فرع البنك</option>
+                                    <option value="موقع المشروع">موقع المشروع</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="receiveDescription">وصف الدفعة</label>
+                            <textarea id="receiveDescription" rows="3" placeholder="وصف تفصيلي للدفعة المستلمة..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="receiveNotes">ملاحظات إضافية</label>
+                            <textarea id="receiveNotes" rows="2" placeholder="ملاحظات إضافية عن الدفعة المستلمة..."></textarea>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelReceiveBtn">إلغاء</button>
+                            <button type="submit" class="btn btn-primary" id="saveReceivePaymentBtn">حفظ الدفعة المستلمة</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- نموذج إضافة سلفة مدفوعة -->
+        <div class="modal" id="payAdvanceModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="payModalTitle">تسجيل سلفة مدفوعة</h3>
+                    <button class="close-btn" id="closePayModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="payAdvanceForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="payAdvanceNumber">رقم السلفة *</label>
+                                <input type="text" id="payAdvanceNumber" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="payAdvanceType">نوع السلفة *</label>
+                                <select id="payAdvanceType" required>
+                                    <option value="">اختر نوع السلفة</option>
+                                    <option value="سلفة موظف">سلفة موظف</option>
+                                    <option value="دفعة مقدمة لمورد">دفعة مقدمة لمورد</option>
+                                    <option value="دفعة مقاول">دفعة مقاول</option>
+                                    <option value="سلفة تشغيلية">سلفة تشغيلية</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="payRecipientName">اسم المخول *</label>
+                                <input type="text" id="payRecipientName" required placeholder="مثال: محمد أحمد أو شركة التقنية">
+                            </div>
+                            <div class="form-group">
+                                <label for="payAmount">المبلغ المدفوع (دينار عراقي) *</label>
+                                <input type="number" id="payAmount" min="0" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="payDate">تاريخ الدفع *</label>
+                                <input type="date" id="payDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="dueDate">تاريخ الاستحقاق المتوقع</label>
+                                <input type="date" id="dueDate">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="paymentMethod">طريقة الدفع *</label>
+                                <select id="paymentMethod" required>
+                                    <option value="">اختر طريقة الدفع</option>
+                                    <option value="نقدي">نقدي</option>
+                                    <option value="تحويل بنكي">تحويل بنكي</option>
+                                    <option value="شيك">شيك</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="paymentLocation">مكان الدفع</label>
+                                <select id="paymentLocation">
+                                    <option value="">اختر مكان الدفع</option>
+                                    <option value="مقر الشركة">مقر الشركة</option>
+                                    <option value="فرع البنك">فرع البنك</option>
+                                    <option value="موقع المشروع">موقع المشروع</option>
+                                    <option value="منزل المستلم">منزل المستلم</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="payDescription">وصف السلفة</label>
+                            <textarea id="payDescription" rows="3" placeholder="وصف تفصيلي للسبب والغرض من السلفة..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="payNotes">ملاحظات إضافية</label>
+                            <textarea id="payNotes" rows="2" placeholder="ملاحظات إضافية عن السلفة المدفوعة..."></textarea>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelPayBtn">إلغاء</button>
+                            <button type="submit" class="btn btn-success" id="savePayAdvanceBtn">حفظ السلفة المدفوعة</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- نموذج استرداد سلفة -->
+        <div class="modal" id="refundAdvanceModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="refundModalTitle">استرداد سلفة</h3>
+                    <button class="close-btn" id="closeRefundModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="refund-header">
+                        <h4>السلفة: <span id="refundAdvanceNumber"></span></h4>
+                        <p>المخول: <strong id="refundRecipientName"></strong></p>
+                    </div>
+                    
+                    <div class="refund-info-cards">
+                        <div class="info-card">
+                            <label>المبلغ الأصلي:</label>
+                            <span id="refundOriginalAmount" class="amount"></span>
+                        </div>
+                        <div class="info-card">
+                            <label>المسترد حتى الآن:</label>
+                            <span id="refundRefundedAmount" class="amount"></span>
+                        </div>
+                        <div class="info-card">
+                            <label>المتبقي للاسترداد:</label>
+                            <span id="refundRemainingAmount" class="amount remaining"></span>
+                        </div>
+                    </div>
+                    
+                    <form id="refundAdvanceForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="refundDate">تاريخ الاسترداد *</label>
+                                <input type="date" id="refundDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="refundAmount">المبلغ المسترد (دينار عراقي) *</label>
+                                <input type="number" id="refundAmount" min="0" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="refundMethod">طريقة الاسترداد *</label>
+                                <select id="refundMethod" required>
+                                    <option value="">اختر طريقة الاسترداد</option>
+                                    <option value="نقدي">نقدي</option>
+                                    <option value="تحويل بنكي">تحويل بنكي</option>
+                                    <option value="خصم من راتب">خصم من راتب</option>
+                                    <option value="تسوية حساب">تسوية حساب</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="refundDescription">وصف الاسترداد</label>
+                                <input type="text" id="refundDescription" placeholder="سبب الاسترداد...">
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelRefundBtn">إلغاء</button>
+                            <button type="submit" class="btn btn-warning" id="saveRefundBtn">تسجيل الاسترداد</button>
+                        </div>
+                    </form>
+                    
+                    <!-- جدول استردادات السلفة -->
+                    <div class="refunds-history" id="refundsHistorySection">
+                        <h5>سجل الاستردادات</h5>
+                        <div class="table-container-small">
+                            <table id="refundsHistoryTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>التاريخ</th>
+                                        <th>المبلغ</th>
+                                        <th>الصافي</th>
+                                        <th>الطريقة</th>
+                                        <th>الوصف</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="refundsHistoryBody">
+                                    <!-- سيتم ملؤها بواسطة JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- نموذج عرض تفاصيل السلفة -->
+        <div class="modal" id="advanceDetailsModal">
+            <div class="modal-content wide-modal">
+                <div class="modal-header">
+                    <h3 id="detailsModalTitle">تفاصيل السلفة</h3>
+                    <button class="close-btn" id="closeDetailsModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="advance-details" id="advanceDetailsContent">
+                        <!-- سيتم ملؤها بواسطة JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../firebase-config.js"></script>
+    <script src="advances.js"></script>
+</body>
+</html>

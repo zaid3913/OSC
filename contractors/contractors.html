@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="format-detection" content="telephone=no">
+<meta name="msapplication-tap-highlight" content="no">
+
+    <title>قسم المقاولين</title>
+    <link rel="stylesheet" href="contractors.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- رأس الصفحة -->
+        <header class="page-header">
+            <button class="btn btn-back" onclick="window.location.href='../index.html'">
+                <i class="fas fa-arrow-right"></i> العودة
+            </button>
+            <h1><i class="fas fa-hard-hat"></i> قسم المقاولين</h1>
+            <div class="page-actions">
+                <button class="btn btn-primary" onclick="openAddContractorModal()">
+                    <i class="fas fa-plus"></i> إضافة مقاول جديد
+                </button>
+            </div>
+        </header>
+
+        <!-- ملخص المقاولين -->
+        <div class="summary-cards">
+            <div class="summary-card">
+                <div class="summary-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <div class="summary-info">
+                    <h3>إجمالي المقاولين</h3>
+                    <p id="total-contractors">0</p>
+                </div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-icon">
+                    <i class="fas fa-money-bill-wave"></i>
+                </div>
+                <div class="summary-info">
+                    <h3>إجمالي العقود</h3>
+                    <p id="total-contracts">0 د.ع</p>
+                </div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-icon">
+                    <i class="fas fa-hand-holding-usd"></i>
+                </div>
+                <div class="summary-info">
+                    <h3>إجمالي المدفوعات</h3>
+                    <p id="total-payments">0 د.ع</p>
+                </div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-icon">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                </div>
+                <div class="summary-info">
+                    <h3>المتبقي للدفع</h3>
+                    <p id="remaining-balance">0 د.ع</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- جدول المقاولين -->
+        <div class="data-section">
+            <div class="section-header">
+                <h2><i class="fas fa-list"></i> قائمة المقاولين</h2>
+                <div class="search-box">
+                    <input type="text" id="searchContractor" placeholder="بحث عن مقاول..." onkeyup="searchContractors()">
+                    <i class="fas fa-search"></i>
+                </div>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>اسم المقاول</th>
+                            <th>رقم الهاتف</th>
+                            <th>نوع العمل</th>
+                            <th>قيمة العقد</th>
+                            <th>المدفوع</th>
+                            <th>المتبقي</th>
+                            <th>الحالة</th>
+                            <th>الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="contractorsTableBody">
+                        <!-- سيتم تعبئته بالبيانات -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="no-data" id="noContractorsMessage" style="display: none;">
+                <i class="fas fa-hard-hat"></i>
+                <p>لا توجد مقاولين مضافة بعد</p>
+                <button class="btn btn-primary" onclick="openAddContractorModal()">
+                    <i class="fas fa-plus"></i> إضافة أول مقاول
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نموذج إضافة/تعديل مقاول -->
+    <div id="contractorModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-hard-hat"></i> <span id="modalTitle">إضافة مقاول جديد</span></h3>
+                <button class="btn-close" onclick="closeContractorModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="contractorForm">
+                    <input type="hidden" id="contractorId">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="contractorName"><i class="fas fa-user"></i> اسم المقاول *</label>
+                            <input type="text" id="contractorName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="contractorPhone"><i class="fas fa-phone"></i> رقم الهاتف *</label>
+                            <input type="tel" id="contractorPhone" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="workType"><i class="fas fa-tools"></i> نوع العمل *</label>
+                            <input type="text" id="workType" placeholder="مثال: بناء، كهرباء، صحي..." required>
+                        </div>
+                        <div class="form-group">
+                            <label for="contractDate"><i class="fas fa-calendar"></i> تاريخ العقد *</label>
+                            <input type="date" id="contractDate" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="contractValue"><i class="fas fa-money-bill-wave"></i> قيمة العقد الإجمالية (دينار عراقي) *</label>
+                        <input type="number" id="contractValue" min="0" step="1000" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="contractDescription"><i class="fas fa-file-alt"></i> وصف العمل المتفق عليه</label>
+                        <textarea id="contractDescription" rows="3" placeholder="وصف تفصيلي للعمل المطلوب من المقاول..."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="contractStatus"><i class="fas fa-check-circle"></i> حالة العقد</label>
+                        <select id="contractStatus">
+                            <option value="active">نشط</option>
+                            <option value="completed">مكتمل</option>
+                            <option value="pending">معلق</option>
+                            <option value="cancelled">ملغي</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeContractorModal()">إلغاء</button>
+                        <button type="submit" class="btn btn-primary" id="modalSubmitBtn">حفظ</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- نموذج إضافة دفعة -->
+    <div id="paymentModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-money-check-alt"></i> إضافة دفعة للمقاول</h3>
+                <button class="btn-close" onclick="closePaymentModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="paymentForm">
+                    <input type="hidden" id="paymentContractorId">
+                    
+                    <div class="form-group">
+                        <label><i class="fas fa-user"></i> اسم المقاول</label>
+                        <p id="paymentContractorName" class="info-text"></p>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="paymentAmount"><i class="fas fa-money-bill"></i> مبلغ الدفعة (دينار عراقي) *</label>
+                            <input type="number" id="paymentAmount" min="0" step="1000" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="paymentDate"><i class="fas fa-calendar"></i> تاريخ الدفعة *</label>
+                            <input type="date" id="paymentDate" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="paymentMethod"><i class="fas fa-credit-card"></i> طريقة الدفع</label>
+                            <select id="paymentMethod">
+                                <option value="cash">نقداً</option>
+                                <option value="bank">حوالة بنكية</option>
+                                <option value="check">شيك</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="paymentType"><i class="fas fa-list"></i> نوع الدفعة</label>
+                            <select id="paymentType">
+                                <option value="advance">دفعة مقدمة</option>
+                                <option value="progress">دفعة مرحلة</option>
+                                <option value="final">دفعة نهائية</option>
+                                <option value="other">أخرى</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="paymentDescription"><i class="fas fa-file-alt"></i> وصف الدفعة</label>
+                        <textarea id="paymentDescription" rows="3" placeholder="وصف الدفعة والمرحلة المدفوعة..."></textarea>
+                    </div>
+                    
+                    <div class="info-box">
+                        <p><i class="fas fa-info-circle"></i> سوف يتم خصم المبلغ من رصيد المشروع الحالي</p>
+                        <p id="currentProjectBalanceInfo"></p>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closePaymentModal()">إلغاء</button>
+                        <button type="submit" class="btn btn-primary">إضافة الدفعة</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="../firebase-config.js"></script>
+    <script src="contractors.js"></script>
+    <script>
+        // تحميل المقاولين عند فتح الصفحة
+        document.addEventListener('DOMContentLoaded', function() {
+            // تأخير بسيط لضمان تحميل Firebase
+            setTimeout(() => {
+                loadContractors();
+                updateSummary();
+                
+                // إضافة الحدث للنموذج
+                const contractorForm = document.getElementById('contractorForm');
+                const paymentForm = document.getElementById('paymentForm');
+                
+                if (contractorForm) {
+                    contractorForm.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        saveContractor();
+                    });
+                }
+                
+                if (paymentForm) {
+                    paymentForm.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        savePayment();
+                    });
+                }
+            }, 500);
+        });
+    </script>
+</body>
+</html>

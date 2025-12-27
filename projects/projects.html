@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>إدارة المشاريع</title>
+    <link rel="stylesheet" href="projects.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- شريط التنقل -->
+        <nav class="navbar">
+            <div class="nav-brand">
+                <a href="../index.html">
+                    <i class="fas fa-arrow-right"></i> الرئيسية
+                </a>
+                <h2>إدارة المشاريع</h2>
+            </div>
+            <div class="nav-actions">
+                <button class="btn btn-primary" id="addProjectBtn">
+                    <i class="fas fa-plus-circle"></i> إضافة مشروع جديد
+                </button>
+            </div>
+        </nav>
+
+        <!-- المشروع المحدد حالياً -->
+        <div class="current-project-card" id="currentProjectCard" style="display: none;">
+            <div class="current-project-header">
+                <h3>المشروع الحالي المحدد</h3>
+                <button class="btn btn-secondary" id="changeProjectBtn">
+                    <i class="fas fa-exchange-alt"></i> تغيير المشروع
+                </button>
+            </div>
+            <div class="current-project-info">
+                <h4 id="currentProjectName"></h4>
+                <p id="currentProjectDescription"></p>
+                <div class="project-stats">
+                    <span><i class="fas fa-users"></i> موظفين: <span id="currentProjectEmployees">0</span></span>
+                    <span><i class="fas fa-hand-holding-usd"></i> سلف: <span id="currentProjectAdvances">0</span></span>
+                    <span><i class="fas fa-file-invoice-dollar"></i> مصاريف: <span id="currentProjectExpenses">0</span></span>
+                </div>
+                    <button class="btn btn-info" onclick="goToEmployees()">
+                        <i class="fas fa-users"></i> الموظفين
+                    </button>
+                    <button class="btn btn-warning" onclick="goToAdvances()">
+                        <i class="fas fa-hand-holding-usd"></i> السلف
+                    </button>
+                    <button class="btn btn-danger" onclick="goToExpenses()">
+                        <i class="fas fa-file-invoice-dollar"></i> المصاريف
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- قائمة المشاريع -->
+        <div class="projects-container">
+            <h3>قائمة المشاريع</h3>
+            <div class="projects-grid" id="projectsGrid">
+                <!-- سيتم ملؤها بواسطة JavaScript -->
+            </div>
+        </div>
+
+        <!-- نموذج إضافة/تعديل مشروع -->
+        <div class="modal" id="projectModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle">إضافة مشروع جديد</h3>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="projectForm">
+                        <div class="form-group">
+                            <label for="projectName">اسم المشروع *</label>
+                            <input type="text" id="projectName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="projectDescription">وصف المشروع</label>
+                            <textarea id="projectDescription" rows="3"></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="projectStartDate">تاريخ البدء</label>
+                                <input type="date" id="projectStartDate">
+                            </div>
+                            <div class="form-group">
+                                <label for="projectEndDate">تاريخ الانتهاء المتوقع</label>
+                                <input type="date" id="projectEndDate">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="projectStatus">حالة المشروع</label>
+                            <select id="projectStatus">
+                                <option value="نشط">نشط</option>
+                                <option value="مكتمل">مكتمل</option>
+                                <option value="معلق">معلق</option>
+                                <option value="ملغى">ملغى</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="projectBudget">الميزانية (دينار عراقي)</label>
+                            <input type="number" id="projectBudget" min="0">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelBtn">إلغاء</button>
+                            <button type="submit" class="btn btn-primary" id="saveProjectBtn">حفظ المشروع</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../firebase-config.js"></script>
+    <script src="projects.js"></script>
+</body>
+</html>

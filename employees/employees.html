@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+
+    <title>قسم الموظفين - نظام إدارة المشاريع</title>
+    <link rel="stylesheet" href="employees.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- شريط التنقل -->
+        <nav class="navbar">
+            <div class="nav-brand">
+                <a href="../index.html">
+                    <i class="fas fa-arrow-right"></i> العودة للرئيسية
+                </a>
+                <h2>قسم الموظفين</h2>
+            </div>
+            <div class="nav-actions">
+                <button class="btn btn-primary" id="addEmployeeBtn">
+                    <i class="fas fa-user-plus"></i> إضافة موظف جديد
+                </button>
+            </div>
+        </nav>
+
+        <!-- إضافة قسم للمشروع الحالي -->
+        <div id="currentProjectInfo"></div>
+
+        <!-- شريط البحث والتصفية -->
+        <div class="filter-section">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="ابحث عن موظف بالاسم أو الوظيفة...">
+            </div>
+            <div class="filter-options">
+                <select id="departmentFilter">
+                    <option value="">جميع الأقسام</option>
+                    <option value="إدارة">إدارة</option>
+                    <option value="هندسة">هندسة</option>
+                    <option value="مالية">مالية</option>
+                    <option value="مبيعات">مبيعات</option>
+                    <option value="دعم فني">دعم فني</option>
+                </select>
+                <select id="statusFilter">
+                    <option value="">جميع الحالات</option>
+                    <option value="نشط">نشط</option>
+                    <option value="غير نشط">غير نشط</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- جدول الموظفين -->
+        <div class="table-container">
+            <table id="employeesTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>اسم الموظف</th>
+                        <th>الوظيفة</th>
+                        <th>القسم</th>
+                        <th>الراتب</th>
+                        <th>رقم الهاتف</th>
+                        <th>المكافآت</th>
+                        <th>المخالفات</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="employeesTableBody">
+                    <!-- سيتم ملؤها بواسطة JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- نموذج إضافة/تعديل موظف -->
+        <div class="modal" id="employeeModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle">إضافة موظف جديد</h3>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="employeeForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="employeeName">اسم الموظف *</label>
+                                <input type="text" id="employeeName" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="employeePosition">الوظيفة *</label>
+                                <input type="text" id="employeePosition" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="employeeDepartment">القسم *</label>
+                                <select id="employeeDepartment" required>
+                                    <option value="">اختر القسم</option>
+                                    <option value="إدارة">إدارة</option>
+                                    <option value="هندسة">هندسة</option>
+                                    <option value="مالية">مالية</option>
+                                    <option value="مبيعات">مبيعات</option>
+                                    <option value="دعم فني">دعم فني</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="employeeSalary">الراتب (دينار عراقي) *</label>
+                                <input type="number" id="employeeSalary" min="0" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="employeePhone">رقم الهاتف *</label>
+                                <input type="tel" id="employeePhone" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="employeeAddress">العنوان *</label>
+                                <input type="text" id="employeeAddress" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="employeeBonuses">المكافآت (دينار عراقي)</label>
+                                <input type="number" id="employeeBonuses" min="0" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="employeeViolations">المخالفات (دينار عراقي)</label>
+                                <input type="number" id="employeeViolations" min="0" value="0">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="employeeStatus">الحالة</label>
+                                <select id="employeeStatus">
+                                    <option value="نشط">نشط</option>
+                                    <option value="غير نشط">غير نشط</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="employeeHireDate">تاريخ التعيين</label>
+                                <input type="date" id="employeeHireDate">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="employeeNotes">ملاحظات إضافية</label>
+                            <textarea id="employeeNotes" rows="3"></textarea>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelBtn">إلغاء</button>
+                            <button type="submit" class="btn btn-primary" id="saveEmployeeBtn">حفظ الموظف</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- نافذة تأكيد الحذف -->
+        <div class="modal" id="deleteModal">
+            <div class="modal-content delete-modal">
+                <div class="modal-header">
+                    <h3>تأكيد الحذف</h3>
+                    <button class="close-btn" id="closeDeleteModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>هل أنت متأكد من حذف هذا الموظف؟ لا يمكن التراجع عن هذا الإجراء.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="cancelDeleteBtn">إلغاء</button>
+                    <button class="btn btn-danger" id="confirmDeleteBtn">حذف</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- تضمين Firebase Config أولاً -->
+    <script src="../firebase-config.js"></script>
+    
+    <!-- ثم تضمين ملف JavaScript الخاص بالموظفين -->
+    <script src="employees-firebase.js"></script>
+</body>
+</html>
