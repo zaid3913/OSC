@@ -2,9 +2,9 @@
 
 // إعداد Firebase
 const firebaseConfig = {
-  apiKey: ""YOUR_API_KEY_HERE",
+  apiKey: "AIzaSyAn_j0i_-c2xmpDu1xQFbpSloWbm_T-6cs",
   authDomain: "test-ba6eb.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
+  projectId: "test-ba6eb",
   storageBucket: "test-ba6eb.appspot.com",
   messagingSenderId: "1032465837780",
   appId: "1:1032465837780:web:e3b623abcd42712b215541"
