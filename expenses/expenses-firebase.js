@@ -133,26 +133,28 @@ class ImgBBService {
 const imgbbService = new ImgBBService();
 // =========== نهاية خدمة ImgBB ===========
 
-// الانتظار حتى يتم تحميل Firebase Config
-function waitForFirebaseConfig(maxAttempts = 20, interval = 100) {
+// الانتظار حتى يتم تحميل Firebase
+function waitForFirebase(maxAttempts = 20, interval = 100) {
     return new Promise((resolve, reject) => {
         let attempts = 0;
-        
+
         function check() {
             attempts++;
-            if (window.firebaseConfig && window.firebaseConfig.db) {
-                console.log('تم تحميل Firebase Config بنجاح');
-                resolve(window.firebaseConfig);
+
+            if (window.db && window.auth) {
+                console.log('✅ Firebase جاهز');
+                resolve({ db: window.db, auth: window.auth });
             } else if (attempts >= maxAttempts) {
-                reject(new Error('Firebase Config لم يتم تحميله بعد'));
+                reject(new Error('❌ Firebase لم يتم تحميله'));
             } else {
                 setTimeout(check, interval);
             }
         }
-        
+
         check();
     });
 }
+
 
 // =========== دوال إدارة الصور ===========
 
