@@ -15,9 +15,6 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 
-// Authentication
-const auth = firebase.auth();
-
 // قاعدة البيانات
 const db = firebase.firestore();
 
@@ -122,98 +119,6 @@ function showMessage(type, message) {
 
     document.body.appendChild(div);
     setTimeout(() => div.remove(), type === 'error' ? 5000 : 3000);
-}
-
-// ============================================================
-// دوال التوثيق (Authentication)
-// ============================================================
-
-// التحقق من حالة تسجيل الدخول
-function checkAuth() {
-    return new Promise((resolve, reject) => {
-        auth.onAuthStateChanged((user) => {
-            if (user) {
-                resolve(user);
-            } else {
-                resolve(null);
-            }
-        }, reject);
-    });
-}
-
-// تسجيل الخروج
-async function logout() {
-    try {
-        await auth.signOut();
-        // مسح بيانات المشروع المحلية
-        projectManager.clearCurrentProject();
-        // توجيه إلى صفحة تسجيل الدخول
-        window.location.href = 'login.html';
-    } catch (error) {
-        console.error('خطأ في تسجيل الخروج:', error);
-        showMessage('error', 'حدث خطأ أثناء تسجيل الخروج');
-    }
-}
-
-// الحصول على معلومات المستخدم الحالي
-function getCurrentUser() {
-    return auth.currentUser;
-}
-
-// التحقق من صلاحيات المستخدم
-async function checkUserPermissions() {
-    const user = getCurrentUser();
-    if (!user) return { hasAccess: false, role: 'guest' };
-    
-    try {
-        const userDoc = await db.collection('users').doc(user.uid).get();
-        if (userDoc.exists) {
-            const userData = userDoc.data();
-            return { 
-                hasAccess: true, 
-                role: userData.role || 'user',
-                email: user.email,
-                name: userData.name || user.email.split('@')[0]
-            };
-        }
-        
-        // إذا لم يوجد مستخدم في قاعدة البيانات، إنشاؤه
-        await db.collection('users').doc(user.uid).set({
-            email: user.email,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
-            role: 'user'
-        }, { merge: true });
-        
-        return { 
-            hasAccess: true, 
-            role: 'user',
-            email: user.email,
-            name: user.email.split('@')[0]
-        };
-        
-    } catch (error) {
-        console.error('Error checking permissions:', error);
-        return { hasAccess: false, role: 'guest' };
-    }
-}
-
-// حماية الصفحات
-async function protectPage() {
-    const user = await checkAuth();
-    if (!user) {
-        window.location.href = 'login.html';
-        return false;
-    }
-    
-    const permissions = await checkUserPermissions();
-    if (!permissions.hasAccess) {
-        showMessage('error', 'ليس لديك صلاحية للوصول إلى هذه الصفحة');
-        await logout();
-        return false;
-    }
-    
-    return permissions;
 }
 
 // ============================================================
@@ -698,91 +603,15 @@ function addBalanceDebugButton() {
     document.body.appendChild(button);
 }
 
-// إضافة زر تسجيل الخروج
-function addLogoutButton() {
-    if (document.getElementById('logoutBtn')) return;
-    
-    const button = document.createElement('button');
-    button.id = 'logoutBtn';
-    button.innerHTML = '🚪 تسجيل الخروج';
-    button.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background: #e74c3c;
-        color: white;
-        border: none;
-        padding: 8px 15px;
-        border-radius: 5px;
-        cursor: pointer;
-        z-index: 9998;
-        font-size: 12px;
-        opacity: 0.7;
-        transition: opacity 0.3s;
-        font-family: 'Tajawal', sans-serif;
-    `;
-    
-    button.onmouseover = () => button.style.opacity = '1';
-    button.onmouseout = () => button.style.opacity = '0.7';
-    
-    button.onclick = async () => {
-        if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
-            await logout();
-        }
-    };
-    
-    document.body.appendChild(button);
-}
-
-// إضافة معلومات المستخدم
-function addUserInfo(userData) {
-    if (document.getElementById('userInfo')) return;
-    
-    const userInfo = document.createElement('div');
-    userInfo.id = 'userInfo';
-    userInfo.style.cssText = `
-        position: fixed;
-        top: 20px;
-        left: 20px;
-        background: rgba(255, 255, 255, 0.9);
-        padding: 10px 15px;
-        border-radius: 5px;
-        z-index: 9997;
-        font-size: 12px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        font-family: 'Tajawal', sans-serif;
-    `;
-    
-    userInfo.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <i class="fas fa-user-circle" style="color: #3498db;"></i>
-            <div>
-                <div style="font-weight: bold; color: #2c3e50;">${userData.name}</div>
-                <div style="font-size: 10px; color: #7f8c8d;">${userData.role === 'admin' ? 'مدير' : 'مستخدم'}</div>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(userInfo);
-}
-
 // ============================================================
 // تصدير متغيرات عامة للملفات الأخرى
 // ============================================================
 
 const firebaseConfigObject = { 
     db, 
-    auth,
     projectManager, 
     showMessage, 
     formatCurrency,
-    
-    // دوال التوثيق
-    checkAuth,
-    logout,
-    getCurrentUser,
-    checkUserPermissions,
-    protectPage,
     
     // الدوال الجديدة
     calculateAccurateBalance,
@@ -797,48 +626,16 @@ const firebaseConfigObject = {
     calculateProjectBalance,
     loadAndUpdateProjectBalance,
     getCurrentProjectBalance,
-    updateContractorStats,
-    
-    // دوال واجهة المستخدم
-    addBalanceDebugButton,
-    addLogoutButton,
-    addUserInfo
+    updateContractorStats
 };
 
 window.firebaseConfig = firebaseConfigObject;
 
-// التحقق من التوثيق عند تحميل الملف
-(async function() {
-    try {
-        const user = await checkAuth();
-        if (user) {
-            console.log('المستخدم مسجل الدخول:', user.email);
-            const permissions = await checkUserPermissions();
-            
-            // إضافة أزرار التحكم بعد تحميل الصفحة
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', () => {
-                    setTimeout(() => {
-                        addBalanceDebugButton();
-                        addLogoutButton();
-                        addUserInfo(permissions);
-                    }, 2000);
-                });
-            } else {
-                setTimeout(() => {
-                    addBalanceDebugButton();
-                    addLogoutButton();
-                    addUserInfo(permissions);
-                }, 2000);
-            }
-        } else {
-            console.log('المستخدم غير مسجل الدخول');
-            // توجيه إلى صفحة تسجيل الدخول إذا لم تكن عليها
-            if (!window.location.href.includes('login.html')) {
-                window.location.href = 'login.html';
-            }
-        }
-    } catch (error) {
-        console.error('Error checking auth:', error);
-    }
-})();
+// إضافة زر الفحص بعد تحميل الصفحة
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(addBalanceDebugButton, 3000);
+    });
+} else {
+    setTimeout(addBalanceDebugButton, 3000);
+}

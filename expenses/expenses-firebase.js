@@ -133,165 +133,25 @@ class ImgBBService {
 const imgbbService = new ImgBBService();
 // =========== نهاية خدمة ImgBB ===========
 
-// =========== دوال إدارة التوثيق ===========
-
 // الانتظار حتى يتم تحميل Firebase Config
-function waitForFirebaseConfig(maxAttempts = 30, interval = 200) {
+function waitForFirebaseConfig(maxAttempts = 20, interval = 100) {
     return new Promise((resolve, reject) => {
         let attempts = 0;
-
+        
         function check() {
             attempts++;
-
             if (window.firebaseConfig && window.firebaseConfig.db) {
-                console.log('✅ Firebase Config جاهز');
+                console.log('تم تحميل Firebase Config بنجاح');
                 resolve(window.firebaseConfig);
             } else if (attempts >= maxAttempts) {
-                reject(new Error('❌ Firebase Config لم يتم تحميله بعد ' + maxAttempts + ' محاولة'));
+                reject(new Error('Firebase Config لم يتم تحميله بعد'));
             } else {
                 setTimeout(check, interval);
             }
         }
-
+        
         check();
     });
-}
-
-// التحقق من التوثيق
-async function initializeAuth() {
-    try {
-        if (!window.firebaseConfig) {
-            console.error('firebaseConfig غير موجود');
-            window.location.href = '../login.html';
-            return false;
-        }
-        
-        // التحقق من التوثيق
-        const permissions = await window.firebaseConfig.protectPage();
-        
-        if (!permissions) {
-            return false;
-        }
-        
-        // حفظ بيانات المستخدم
-        window.currentUser = permissions;
-        console.log('✅ تم التوثيق بنجاح للمستخدم:', permissions.email);
-        return true;
-        
-    } catch (error) {
-        console.error('خطأ في التوثيق:', error);
-        window.location.href = '../login.html';
-        return false;
-    }
-}
-
-// إعداد زر تسجيل الخروج
-function setupLogoutButton() {
-    // إنشاء زر تسجيل الخروج إذا لم يكن موجوداً
-    if (!document.getElementById('logoutBtn')) {
-        const logoutBtn = document.createElement('button');
-        logoutBtn.id = 'logoutBtn';
-        logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> تسجيل الخروج';
-        logoutBtn.className = 'btn btn-logout';
-        logoutBtn.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: linear-gradient(to right, #e74c3c, #c0392b);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            z-index: 9998;
-            font-family: 'Tajawal', sans-serif;
-            box-shadow: 0 2px 10px rgba(231, 76, 60, 0.3);
-            transition: all 0.3s;
-        `;
-        
-        logoutBtn.addEventListener('mouseenter', () => {
-            logoutBtn.style.transform = 'translateY(-2px)';
-            logoutBtn.style.boxShadow = '0 5px 15px rgba(231, 76, 60, 0.4)';
-        });
-        
-        logoutBtn.addEventListener('mouseleave', () => {
-            logoutBtn.style.transform = 'translateY(0)';
-            logoutBtn.style.boxShadow = '0 2px 10px rgba(231, 76, 60, 0.3)';
-        });
-        
-        logoutBtn.addEventListener('click', async () => {
-            if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
-                try {
-                    await window.firebaseConfig.logout();
-                } catch (error) {
-                    console.error('خطأ في تسجيل الخروج:', error);
-                }
-            }
-        });
-        
-        document.body.appendChild(logoutBtn);
-    }
-}
-
-// إعداد معلومات المستخدم
-function setupUserInfo() {
-    // إنشاء بطاقة معلومات المستخدم إذا لم تكن موجودة
-    if (!document.getElementById('userInfoCard') && window.currentUser) {
-        const userInfoCard = document.createElement('div');
-        userInfoCard.id = 'userInfoCard';
-        userInfoCard.style.cssText = `
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background: linear-gradient(to right, #3498db, #2980b9);
-            color: white;
-            padding: 10px 15px;
-            border-radius: 8px;
-            z-index: 9997;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
-            font-family: 'Tajawal', sans-serif;
-            max-width: 300px;
-            animation: slideIn 0.3s ease;
-        `;
-        
-        userInfoCard.innerHTML = `
-            <i class="fas fa-user-circle" style="font-size: 32px;"></i>
-            <div style="flex: 1; min-width: 0;">
-                <div style="font-weight: bold; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${window.currentUser.name}
-                </div>
-                <div style="font-size: 12px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${window.currentUser.email}
-                </div>
-                <div style="font-size: 11px; margin-top: 3px;">
-                    <span style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px;">
-                        ${window.currentUser.role === 'admin' ? 'مدير' : 'مستخدم'}
-                    </span>
-                </div>
-            </div>
-        `;
-        
-        // إضافة animation CSS
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes slideIn {
-                from {
-                    opacity: 0;
-                    transform: translateX(-20px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateX(0);
-                }
-            }
-        `;
-        document.head.appendChild(style);
-        
-        document.body.appendChild(userInfoCard);
-    }
 }
 
 // =========== دوال إدارة الصور ===========
@@ -338,9 +198,7 @@ function initImageUpload() {
         if (file && file.type.startsWith('image/')) {
             handleImageFile(file);
         } else {
-            if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-                window.firebaseConfig.showMessage('error', 'الرجاء اختيار ملف صورة فقط');
-            }
+            window.firebaseConfig.showMessage('error', 'الرجاء اختيار ملف صورة فقط');
         }
     });
 
@@ -352,17 +210,13 @@ function initImageUpload() {
 // معالجة ملف الصورة
 function handleImageFile(file) {
     if (file.size > 5 * 1024 * 1024) {
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'حجم الملف كبير جداً. الحد الأقصى هو 5MB');
-        }
+        window.firebaseConfig.showMessage('error', 'حجم الملف كبير جداً. الحد الأقصى هو 5MB');
         return;
     }
 
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'صيغة الملف غير مدعومة. استخدم JPG, PNG, GIF, أو WebP');
-        }
+        window.firebaseConfig.showMessage('error', 'صيغة الملف غير مدعومة. استخدم JPG, PNG, GIF, أو WebP');
         return;
     }
 
@@ -421,9 +275,7 @@ async function uploadExpenseImage(expenseId = null) {
         
     } catch (error) {
         console.error('خطأ في رفع الصورة:', error);
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', `تعذر رفع الصورة: ${error.message}`);
-        }
+        window.firebaseConfig.showMessage('error', `تعذر رفع الصورة: ${error.message}`);
         return {
             success: false,
             error: error.message
@@ -840,9 +692,7 @@ async function loadExpenses() {
     } catch (error) {
         console.error("Error loading expenses:", error);
         hideLoading();
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'تعذر تحميل بيانات المصاريف');
-        }
+        window.firebaseConfig.showMessage('error', 'تعذر تحميل بيانات المصاريف');
     }
 }
 
@@ -919,18 +769,14 @@ async function addExpense(expenseData) {
             });
         }
         
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('success', 'تم إضافة المصروف بنجاح وتقليل الرصيد');
-        }
+        window.firebaseConfig.showMessage('success', 'تم إضافة المصروف بنجاح وتقليل الرصيد');
         closeExpenseModal();
         loadExpenses();
         
     } catch (error) {
         console.error("Error adding expense:", error);
         hideLoading();
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'تعذر إضافة المصروف');
-        }
+        window.firebaseConfig.showMessage('error', 'تعذر إضافة المصروف');
     }
 }
 
@@ -1004,18 +850,14 @@ async function updateExpense(expenseId, expenseData) {
         
         await expenseRef.update(expenseData);
         
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('success', 'تم تحديث المصروف بنجاح');
-        }
+        window.firebaseConfig.showMessage('success', 'تم تحديث المصروف بنجاح');
         closeExpenseModal();
         loadExpenses();
         
     } catch (error) {
         console.error("Error updating expense:", error);
         hideLoading();
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'تعذر تحديث المصروف');
-        }
+        window.firebaseConfig.showMessage('error', 'تعذر تحديث المصروف');
     }
 }
 
@@ -1056,17 +898,13 @@ async function deleteExpense(expenseId) {
             .doc(expenseId)
             .delete();
         
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('success', 'تم حذف المصروف وإعادة الرصيد بنجاح');
-        }
+        window.firebaseConfig.showMessage('success', 'تم حذف المصروف وإعادة الرصيد بنجاح');
         loadExpenses();
         
     } catch (error) {
         console.error("Error deleting expense:", error);
         hideLoading();
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'تعذر حذف المصروف');
-        }
+        window.firebaseConfig.showMessage('error', 'تعذر حذف المصروف');
     }
 }
 
@@ -1076,9 +914,7 @@ async function generateRecipientReport() {
     const month = document.getElementById('reportMonthFilter').value;
     
     if (!recipientName) {
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'الرجاء اختيار مخول لعرض تقريره');
-        }
+        window.firebaseConfig.showMessage('error', 'الرجاء اختيار مخول لعرض تقريره');
         return;
     }
     
@@ -1168,9 +1004,7 @@ async function generateRecipientReport() {
     } catch (error) {
         console.error("Error generating recipient report:", error);
         hideLoading();
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'تعذر توليد التقرير');
-        }
+        window.firebaseConfig.showMessage('error', 'تعذر توليد التقرير');
     }
 }
 
@@ -1478,9 +1312,7 @@ function exportFilteredExpensesToExcel() {
         // التحقق من وجود صفوف
         const rows = tableBody.querySelectorAll('tr');
         if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('td[colspan]'))) {
-            if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-                window.firebaseConfig.showMessage('warning', 'لا توجد بيانات معروضة للتصدير');
-            }
+            window.firebaseConfig.showMessage('warning', 'لا توجد بيانات معروضة للتصدير');
             return;
         }
         
@@ -1692,15 +1524,11 @@ function exportFilteredExpensesToExcel() {
         const fileName = `مصاريف_${project.name.replace(/[^\w\u0600-\u06FF]/g, '_')}_${getFilterFileNamePart(filterInfo)}_${new Date().getTime()}.xlsx`;
         XLSX.writeFile(wb, fileName);
         
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('success', `تم تصدير ${rowIndex} سجل إلى Excel بنجاح`);
-        }
+        window.firebaseConfig.showMessage('success', `تم تصدير ${rowIndex} سجل إلى Excel بنجاح`);
         
     } catch (error) {
         console.error('خطأ في التصدير:', error);
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'تعذر تصدير البيانات: ' + error.message);
-        }
+        window.firebaseConfig.showMessage('error', 'تعذر تصدير البيانات: ' + error.message);
     }
 }
 
@@ -1745,9 +1573,7 @@ function exportFilteredRecipientReport() {
     const month = document.getElementById('reportMonthFilter').value;
     
     if (!recipientName) {
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'الرجاء اختيار مخول أولاً');
-        }
+        window.firebaseConfig.showMessage('error', 'الرجاء اختيار مخول أولاً');
         return;
     }
     
@@ -1757,9 +1583,7 @@ function exportFilteredRecipientReport() {
         
         // التحقق من وجود بيانات
         if (!recipientExpenses || recipientExpenses.length === 0) {
-            if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-                window.firebaseConfig.showMessage('warning', 'لا توجد بيانات في التقرير للتصدير');
-            }
+            window.firebaseConfig.showMessage('warning', 'لا توجد بيانات في التقرير للتصدير');
             return;
         }
         
@@ -1897,16 +1721,12 @@ function exportFilteredRecipientReport() {
         const fileName = `تقرير_${safeName}_${periodText}_${new Date().getTime()}.xlsx`;
         XLSX.writeFile(wb, fileName);
         
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('success', 
-                `تم تصدير ${recipientExpenses.length} معاملة إلى Excel بنجاح`);
-        }
+        window.firebaseConfig.showMessage('success', 
+            `تم تصدير ${recipientExpenses.length} معاملة إلى Excel بنجاح`);
         
     } catch (error) {
         console.error('خطأ في تصدير التقرير:', error);
-        if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-            window.firebaseConfig.showMessage('error', 'تعذر تصدير التقرير: ' + error.message);
-        }
+        window.firebaseConfig.showMessage('error', 'تعذر تصدير التقرير: ' + error.message);
     }
 }
 
@@ -2043,9 +1863,7 @@ function hasDataToExport() {
 
 // إعادة التوجيه إلى صفحة المشاريع
 function redirectToProjects() {
-    if (window.firebaseConfig && window.firebaseConfig.showMessage) {
-        window.firebaseConfig.showMessage('error', 'الرجاء اختيار مشروع أولاً');
-    }
+    window.firebaseConfig.showMessage('error', 'الرجاء اختيار مشروع أولاً');
     setTimeout(() => {
         window.location.href = '../projects/projects.html';
     }, 2000);
@@ -2176,133 +1994,99 @@ function setupSearchAndFilter() {
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('جاري تحميل صفحة المصاريف...');
     
-    // إضافة شاشة تحميل أولية
-    showLoading('جاري تهيئة النظام والتحقق من التوثيق...');
-    
     try {
-        // الانتظار لتحميل Firebase Config
-        const firebaseConfig = await waitForFirebaseConfig();
+        await waitForFirebaseConfig();
         
-        // التحقق من التوثيق
-        const authSuccess = await initializeAuth();
-        if (!authSuccess) {
-            // تم التوجيه تلقائياً إلى صفحة تسجيل الدخول
-            hideLoading();
+        if (!window.firebaseConfig.projectManager.hasCurrentProject()) {
+            redirectToProjects();
             return;
         }
         
-        // التحقق من وجود مشروع محدد
-        if (!firebaseConfig.projectManager.hasCurrentProject()) {
-            hideLoading();
-            showErrorMessage('الرجاء اختيار مشروع أولاً');
-            setTimeout(() => {
-                window.location.href = '../projects/projects.html';
-            }, 2000);
-            return;
-        }
-        
-        // إخفاء شاشة التحميل
-        hideLoading();
-        
-        // تحميل باقي الصفحة
         displayCurrentProjectInfo();
         await loadExpenses();
         setupSearchAndFilter();
         initImageUpload();
-        setupLogoutButton();
-        setupUserInfo();
         
-        // إعداد event listeners
-        setupEventListeners();
+        // === إضافة event listeners ===
         
-        console.log('✅ تم تحميل صفحة المصاريف بنجاح');
+        // الزر الرئيسي لإضافة مصروف
+        const addExpenseBtn = document.getElementById('addExpenseBtn');
+        if (addExpenseBtn) {
+            addExpenseBtn.addEventListener('click', openAddExpenseModal);
+        }
+        
+        // زر فتح تقرير المخولين
+        const viewReportBtn = document.getElementById('viewEmployeeReportBtn');
+        if (viewReportBtn) {
+            viewReportBtn.addEventListener('click', openRecipientReportModal);
+        }
+        
+        // زر تصدير Excel للمصاريف المفلترة
+        const exportExcelBtn = document.getElementById('exportFilteredExcelBtn');
+        if (exportExcelBtn) {
+            exportExcelBtn.addEventListener('click', exportFilteredExpensesToExcel);
+        }
+        
+        // زر إغلاق نموذج المصروف
+        const closeModalBtn = document.getElementById('closeModal');
+        if (closeModalBtn) {
+            closeModalBtn.addEventListener('click', closeExpenseModal);
+        }
+        
+        // زر إلغاء في نموذج المصروف
+        const cancelBtn = document.getElementById('cancelBtn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', closeExpenseModal);
+        }
+        
+        // زر إغلاق نموذج التقرير
+        const closeReportBtn = document.getElementById('closeReportModal');
+        if (closeReportBtn) {
+            closeReportBtn.addEventListener('click', closeRecipientReportModal);
+        }
+        
+        // نموذج المصروف
+        const expenseForm = document.getElementById('expenseForm');
+        if (expenseForm) {
+            expenseForm.addEventListener('submit', handleExpenseSubmit);
+        }
+        
+        // زر توليد التقرير
+        const generateReportBtn = document.getElementById('generateReportBtn');
+        if (generateReportBtn) {
+            generateReportBtn.addEventListener('click', generateRecipientReport);
+        }
+        
+        // زر تصدير التقرير
+        const exportReportBtn = document.getElementById('exportFilteredReportBtn');
+        if (exportReportBtn) {
+            exportReportBtn.addEventListener('click', exportFilteredRecipientReport);
+        }
+        
+        // إغلاق النماذج عند النقر خارجها
+        window.addEventListener('click', function(event) {
+            const expenseModal = document.getElementById('expenseModal');
+            const reportModal = document.getElementById('employeeReportModal');
+            
+            if (event.target === expenseModal) closeExpenseModal();
+            if (event.target === reportModal) closeRecipientReportModal();
+        });
+        
+        // إغلاق النماذج بالضغط على زر ESC
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeExpenseModal();
+                closeRecipientReportModal();
+            }
+        });
+        
+        console.log('تم تحميل صفحة المصاريف بنجاح');
         
     } catch (error) {
-        console.error('فشل في تحميل النظام:', error);
-        hideLoading();
-        
-        // عرض رسالة خطأ مفيدة
-        const errorMessage = error.message.includes('انتهى وقت') || error.message.includes('لم يتم تحميله') 
-            ? 'تعذر تحميل النظام. يرجى التحقق من اتصال الإنترنت وتحديث الصفحة.'
-            : `خطأ: ${error.message}`;
-        
-        showErrorMessage(errorMessage);
+        console.error('فشل في تحميل Firebase:', error);
+        showErrorMessage('تعذر تحميل إعدادات النظام، يرجى تحديث الصفحة');
     }
 });
-
-// إعداد event listeners
-function setupEventListeners() {
-    // الزر الرئيسي لإضافة مصروف
-    const addExpenseBtn = document.getElementById('addExpenseBtn');
-    if (addExpenseBtn) {
-        addExpenseBtn.addEventListener('click', openAddExpenseModal);
-    }
-    
-    // زر فتح تقرير المخولين
-    const viewReportBtn = document.getElementById('viewEmployeeReportBtn');
-    if (viewReportBtn) {
-        viewReportBtn.addEventListener('click', openRecipientReportModal);
-    }
-    
-    // زر تصدير Excel للمصاريف المفلترة
-    const exportExcelBtn = document.getElementById('exportFilteredExcelBtn');
-    if (exportExcelBtn) {
-        exportExcelBtn.addEventListener('click', exportFilteredExpensesToExcel);
-    }
-    
-    // زر إغلاق نموذج المصروف
-    const closeModalBtn = document.getElementById('closeModal');
-    if (closeModalBtn) {
-        closeModalBtn.addEventListener('click', closeExpenseModal);
-    }
-    
-    // زر إلغاء في نموذج المصروف
-    const cancelBtn = document.getElementById('cancelBtn');
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', closeExpenseModal);
-    }
-    
-    // زر إغلاق نموذج التقرير
-    const closeReportBtn = document.getElementById('closeReportModal');
-    if (closeReportBtn) {
-        closeReportBtn.addEventListener('click', closeRecipientReportModal);
-    }
-    
-    // نموذج المصروف
-    const expenseForm = document.getElementById('expenseForm');
-    if (expenseForm) {
-        expenseForm.addEventListener('submit', handleExpenseSubmit);
-    }
-    
-    // زر توليد التقرير
-    const generateReportBtn = document.getElementById('generateReportBtn');
-    if (generateReportBtn) {
-        generateReportBtn.addEventListener('click', generateRecipientReport);
-    }
-    
-    // زر تصدير التقرير
-    const exportReportBtn = document.getElementById('exportFilteredReportBtn');
-    if (exportReportBtn) {
-        exportReportBtn.addEventListener('click', exportFilteredRecipientReport);
-    }
-    
-    // إغلاق النماذج عند النقر خارجها
-    window.addEventListener('click', function(event) {
-        const expenseModal = document.getElementById('expenseModal');
-        const reportModal = document.getElementById('employeeReportModal');
-        
-        if (event.target === expenseModal) closeExpenseModal();
-        if (event.target === reportModal) closeRecipientReportModal();
-    });
-    
-    // إغلاق النماذج بالضغط على زر ESC
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            closeExpenseModal();
-            closeRecipientReportModal();
-        }
-    });
-}
 
 // عرض رسالة خطأ
 function showErrorMessage(message) {
@@ -2340,12 +2124,3 @@ function showErrorMessage(message) {
     `;
     document.body.appendChild(errorDiv);
 }
-
-// إضافة animation CSS
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-`;
-document.head.appendChild(style);

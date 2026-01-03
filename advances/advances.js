@@ -6,189 +6,6 @@ let filteredAdvances = [];
 
 // =========== دوال المساعدة ===========
 
-// =========== دوال إدارة التوثيق ===========
-
-// التحقق من التوثيق
-async function initializeAuth() {
-    try {
-        if (!window.firebaseConfig) {
-            console.error('firebaseConfig غير موجود');
-            window.location.href = '../login.html';
-            return false;
-        }
-        
-        // التحقق من التوثيق
-        const permissions = await window.firebaseConfig.protectPage();
-        
-        if (!permissions) {
-            return false;
-        }
-        
-        // حفظ بيانات المستخدم
-        window.currentUser = permissions;
-        console.log('✅ تم التوثيق بنجاح للمستخدم:', permissions.email);
-        return true;
-        
-    } catch (error) {
-        console.error('خطأ في التوثيق:', error);
-        window.location.href = '../login.html';
-        return false;
-    }
-}
-
-// إعداد زر تسجيل الخروج
-function setupLogoutButton() {
-    // إنشاء زر تسجيل الخروج إذا لم يكن موجوداً
-    if (!document.getElementById('logoutBtn')) {
-        const logoutBtn = document.createElement('button');
-        logoutBtn.id = 'logoutBtn';
-        logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> تسجيل الخروج';
-        logoutBtn.className = 'btn btn-logout';
-        logoutBtn.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: linear-gradient(to right, #e74c3c, #c0392b);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            z-index: 9998;
-            font-family: 'Tajawal', sans-serif;
-            box-shadow: 0 2px 10px rgba(231, 76, 60, 0.3);
-            transition: all 0.3s;
-        `;
-        
-        logoutBtn.addEventListener('mouseenter', () => {
-            logoutBtn.style.transform = 'translateY(-2px)';
-            logoutBtn.style.boxShadow = '0 5px 15px rgba(231, 76, 60, 0.4)';
-        });
-        
-        logoutBtn.addEventListener('mouseleave', () => {
-            logoutBtn.style.transform = 'translateY(0)';
-            logoutBtn.style.boxShadow = '0 2px 10px rgba(231, 76, 60, 0.3)';
-        });
-        
-        logoutBtn.addEventListener('click', async () => {
-            if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
-                try {
-                    await window.firebaseConfig.logout();
-                } catch (error) {
-                    console.error('خطأ في تسجيل الخروج:', error);
-                }
-            }
-        });
-        
-        document.body.appendChild(logoutBtn);
-    }
-}
-
-// إعداد معلومات المستخدم
-function setupUserInfo() {
-    // إنشاء بطاقة معلومات المستخدم إذا لم تكن موجودة
-    if (!document.getElementById('userInfoCard') && window.currentUser) {
-        const userInfoCard = document.createElement('div');
-        userInfoCard.id = 'userInfoCard';
-        userInfoCard.style.cssText = `
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background: linear-gradient(to right, #3498db, #2980b9);
-            color: white;
-            padding: 10px 15px;
-            border-radius: 8px;
-            z-index: 9997;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
-            font-family: 'Tajawal', sans-serif;
-            max-width: 300px;
-            animation: slideIn 0.3s ease;
-        `;
-        
-        userInfoCard.innerHTML = `
-            <i class="fas fa-user-circle" style="font-size: 32px;"></i>
-            <div style="flex: 1; min-width: 0;">
-                <div style="font-weight: bold; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${window.currentUser.name}
-                </div>
-                <div style="font-size: 12px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${window.currentUser.email}
-                </div>
-                <div style="font-size: 11px; margin-top: 3px;">
-                    <span style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px;">
-                        ${window.currentUser.role === 'admin' ? 'مدير' : 'مستخدم'}
-                    </span>
-                </div>
-            </div>
-        `;
-        
-        // إضافة animation CSS
-        if (!document.querySelector('style[data-auth-animations]')) {
-            const style = document.createElement('style');
-            style.setAttribute('data-auth-animations', 'true');
-            style.textContent = `
-                @keyframes slideIn {
-                    from {
-                        opacity: 0;
-                        transform: translateX(-20px);
-                    }
-                    to {
-                        opacity: 1;
-                        transform: translateX(0);
-                    }
-                }
-                
-                .btn-logout {
-                    background: linear-gradient(to right, #e74c3c, #c0392b) !important;
-                    color: white !important;
-                    border: none;
-                    padding: 10px 20px;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    font-family: 'Tajawal', sans-serif;
-                    transition: all 0.3s;
-                }
-                
-                .btn-logout:hover {
-                    background: linear-gradient(to right, #c0392b, #a93226) !important;
-                    transform: translateY(-2px);
-                    box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
-                }
-            `;
-            document.head.appendChild(style);
-        }
-        
-        document.body.appendChild(userInfoCard);
-    }
-}
-
-// عرض معلومات المشروع الحالي
-function displayCurrentProjectInfo() {
-    if (!window.firebaseConfig || !window.firebaseConfig.projectManager) return;
-    
-    const currentProject = window.firebaseConfig.projectManager.getCurrentProject();
-    const projectInfoElement = document.getElementById('currentProjectInfo');
-
-    if (!projectInfoElement) {
-        console.warn('عنصر currentProjectInfo غير موجود');
-        return;
-    }
-
-    if (currentProject && currentProject.name) {
-        projectInfoElement.innerHTML = `
-            <div class="project-banner">
-                <h3><i class="fas fa-project-diagram"></i> المشروع الحالي: ${currentProject.name}</h3>
-                <button class="btn btn-secondary" onclick="window.location.href='../projects/projects.html'">
-                    <i class="fas fa-exchange-alt"></i> تغيير المشروع
-                </button>
-            </div>
-        `;
-    }
-}
-
 // الانتظار حتى يتم تحميل Firebase Config
 function waitForFirebaseConfig(maxAttempts = 30, interval = 100) {
     return new Promise((resolve, reject) => {
@@ -196,38 +13,11 @@ function waitForFirebaseConfig(maxAttempts = 30, interval = 100) {
         
         function check() {
             attempts++;
-            
-            // التحقق من وجود Firebase Config مكتمل
-            if (window.firebaseConfig && 
-                window.firebaseConfig.db && 
-                window.firebaseConfig.auth && 
-                window.firebaseConfig.projectManager) {
-                
-                console.log('✅ Firebase Config محمل بشكل كامل:', {
-                    db: !!window.firebaseConfig.db,
-                    auth: !!window.firebaseConfig.auth,
-                    projectManager: !!window.firebaseConfig.projectManager
-                });
-                
-                // التحقق من حالة المصادقة الحالية
-                const currentUser = window.firebaseConfig.getCurrentUser();
-                console.log('👤 حالة المصادقة الحالية:', currentUser ? 'مسجل دخول' : 'غير مسجل دخول');
-                
-                if (currentUser) {
-                    console.log('📧 المستخدم:', currentUser.email);
-                }
-                
+            if (window.firebaseConfig && window.firebaseConfig.db) {
+                console.log('✅ تم تحميل Firebase Config بنجاح');
                 resolve(window.firebaseConfig);
-                
             } else if (attempts >= maxAttempts) {
-                console.error('❌ فشل تحميل Firebase Config بعد محاولات:', {
-                    attempts: attempts,
-                    hasFirebaseConfig: !!window.firebaseConfig,
-                    hasDb: window.firebaseConfig ? !!window.firebaseConfig.db : false,
-                    hasAuth: window.firebaseConfig ? !!window.firebaseConfig.auth : false,
-                    hasProjectManager: window.firebaseConfig ? !!window.firebaseConfig.projectManager : false
-                });
-                reject(new Error('❌ Firebase Config لم يتم تحميله بشكل كامل'));
+                reject(new Error('❌ Firebase Config لم يتم تحميله بعد'));
             } else {
                 setTimeout(check, interval);
             }
@@ -458,13 +248,7 @@ async function loadAdvances() {
     console.log('🚀 بدء تحميل صفحة السلف');
     
     try {
-        // 1. التحقق من التوثيق أولاً
-        const authSuccess = await initializeAuth();
-        if (!authSuccess) {
-            return;
-        }
-        
-        // 2. انتظار تحميل Firebase Config
+        // 1. انتظار تحميل Firebase Config
         if (!window.firebaseConfig) {
             await waitForFirebaseConfig();
         }
@@ -473,7 +257,7 @@ async function loadAdvances() {
             throw new Error('❌ فشل في تحميل Firebase Config');
         }
         
-        // 3. التحقق من المشروع الحالي
+        // 2. التحقق من المشروع الحالي
         const projectManager = window.firebaseConfig.projectManager;
         if (!projectManager.hasCurrentProject()) {
             console.error('❌ لا يوجد مشروع محدد');
@@ -484,22 +268,17 @@ async function loadAdvances() {
         const project = projectManager.getCurrentProject();
         console.log(`📁 المشروع: ${project.name} (${project.id})`);
         
-        // 4. إعداد واجهة المستخدم للتوثيق
-        setupLogoutButton();
-        setupUserInfo();
-        displayCurrentProjectInfo();
-        
-        // 5. إظهار حالة التحميل
+        // 3. إظهار حالة التحميل
         showLoading('جاري تحميل بيانات الدفعات والسلف...');
         
         const db = window.firebaseConfig.db;
         const projectId = project.id;
         
-        // 6. إعادة حساب الرصيد أولاً
+        // 4. إعادة حساب الرصيد أولاً
         console.log('🧮 إعادة حساب الرصيد الشامل...');
         const calculatedBalance = await recalculateProjectBalance();
         
-        // 7. تحميل معاملات السلف
+        // 5. تحميل معاملات السلف
         console.log('📥 تحميل معاملات السلف...');
         const snapshot = await db.collection('projects').doc(projectId)
             .collection('advances')
@@ -517,16 +296,16 @@ async function loadAdvances() {
         
         console.log(`✅ تم تحميل ${advances.length} معاملة`);
         
-        // 8. عرض البيانات
+        // 6. عرض البيانات
         filteredAdvances = [...advances];
         displayAdvances(filteredAdvances);
         
-        // 9. إخفاء التحميل
+        // 7. إخفاء التحميل
         hideLoading();
         
         console.log('✅ تم تحميل الصفحة بنجاح');
         
-        // 10. تحديث نهائي بعد التأكد
+        // 8. تحديث نهائي بعد التأكد
         setTimeout(async () => {
             console.log('🔍 التحقق النهائي...');
             
@@ -962,21 +741,11 @@ function redirectToProjects() {
     if (window.firebaseConfig && window.firebaseConfig.showMessage) {
         window.firebaseConfig.showMessage('error', 'الرجاء اختيار مشروع أولاً');
     }
-    
-    // التحقق إذا كان المستخدم مسجل الدخول
-    if (window.firebaseConfig && window.firebaseConfig.getCurrentUser()) {
-        setTimeout(() => {
-            window.location.href = '../projects/projects.html';
-        }, 2000);
-    } else {
-        // إذا لم يكن مسجل الدخول، توجيه إلى صفحة تسجيل الدخول
-        setTimeout(() => {
-            window.location.href = '../login.html';
-        }, 2000);
-    }
+    setTimeout(() => {
+        window.location.href = '../projects/projects.html';
+    }, 2000);
 }
 
-// عرض رسالة خطأ
 function showErrorMessage(message) {
     const errorDiv = document.createElement('div');
     errorDiv.style.cssText = `
@@ -997,32 +766,17 @@ function showErrorMessage(message) {
     errorDiv.innerHTML = `
         <h3 style="margin: 0 0 10px 0;"><i class="fas fa-exclamation-triangle"></i> خطأ</h3>
         <p style="margin: 0 0 15px 0;">${message}</p>
-        <div style="display: flex; justify-content: center; gap: 10px;">
-            <button onclick="location.reload()" style="
-                background: white;
-                color: #e74c3c;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-weight: bold;
-                flex: 1;
-            ">
-                <i class="fas fa-redo"></i> تحديث
-            </button>
-            <button onclick="window.location.href='../login.html'" style="
-                background: #3498db;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-weight: bold;
-                flex: 1;
-            ">
-                <i class="fas fa-sign-in-alt"></i> تسجيل الدخول
-            </button>
-        </div>
+        <button onclick="location.reload()" style="
+            background: white;
+            color: #e74c3c;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        ">
+            إعادة تحميل الصفحة
+        </button>
     `;
     document.body.appendChild(errorDiv);
 }
@@ -1071,16 +825,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 بدء تحميل صفحة السلف...');
     
     try {
-        // إضافة شاشة تحميل أولية
-        showLoading('جاري تهيئة النظام والتحقق من التوثيق...');
-        
-        // التحقق من التوثيق أولاً
-        const authSuccess = await initializeAuth();
-        if (!authSuccess) {
-            hideLoading();
-            return;
-        }
-        
         // انتظار تحميل firebaseConfig
         if (!window.firebaseConfig) {
             console.log('⏳ انتظار تحميل firebaseConfig...');
@@ -1092,13 +836,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         // التحقق من المشروع
         if (!window.firebaseConfig.projectManager.hasCurrentProject()) {
             console.error('❌ لا يوجد مشروع محدد');
-            hideLoading();
             redirectToProjects();
             return;
         }
-        
-        // إخفاء شاشة التحميل
-        hideLoading();
         
         // تحميل البيانات
         await loadAdvances();
@@ -1107,72 +847,24 @@ document.addEventListener('DOMContentLoaded', async function() {
         setupSearchAndFilter();
         
         // إعداد Event Listeners
-        setupEventListeners();
+        document.getElementById('addReceiveBtn').addEventListener('click', openReceivePaymentModal);
+        document.getElementById('addPaymentBtn').addEventListener('click', openPayAdvanceModal);
+        
+        document.getElementById('closeReceiveModal').addEventListener('click', closeReceivePaymentModal);
+        document.getElementById('cancelReceiveBtn').addEventListener('click', closeReceivePaymentModal);
+        document.getElementById('closePayModal').addEventListener('click', closePayAdvanceModal);
+        document.getElementById('cancelPayBtn').addEventListener('click', closePayAdvanceModal);
+        
+        document.getElementById('receivePaymentForm').addEventListener('submit', handleReceivePaymentSubmit);
+        document.getElementById('payAdvanceForm').addEventListener('submit', handlePayAdvanceSubmit);
         
         console.log('✅ تم تحميل صفحة السلف بنجاح');
         
     } catch (error) {
         console.error('❌ خطأ في تحميل الصفحة:', error);
-        hideLoading();
         showErrorMessage('تعذر تحميل الصفحة، يرجى المحاولة مرة أخرى');
     }
 });
-
-// =========== إعداد Event Listeners ===========
-
-function setupEventListeners() {
-    // أزرار إضافة المعاملات
-    const addReceiveBtn = document.getElementById('addReceiveBtn');
-    const addPaymentBtn = document.getElementById('addPaymentBtn');
-    
-    if (addReceiveBtn) {
-        addReceiveBtn.addEventListener('click', openReceivePaymentModal);
-    }
-    
-    if (addPaymentBtn) {
-        addPaymentBtn.addEventListener('click', openPayAdvanceModal);
-    }
-    
-    // أزرار إغلاق النماذج
-    const closeReceiveModal = document.getElementById('closeReceiveModal');
-    const cancelReceiveBtn = document.getElementById('cancelReceiveBtn');
-    const closePayModal = document.getElementById('closePayModal');
-    const cancelPayBtn = document.getElementById('cancelPayBtn');
-    
-    if (closeReceiveModal) closeReceiveModal.addEventListener('click', closeReceivePaymentModal);
-    if (cancelReceiveBtn) cancelReceiveBtn.addEventListener('click', closeReceivePaymentModal);
-    if (closePayModal) closePayModal.addEventListener('click', closePayAdvanceModal);
-    if (cancelPayBtn) cancelPayBtn.addEventListener('click', closePayAdvanceModal);
-    
-    // النماذج
-    const receivePaymentForm = document.getElementById('receivePaymentForm');
-    const payAdvanceForm = document.getElementById('payAdvanceForm');
-    
-    if (receivePaymentForm) {
-        receivePaymentForm.addEventListener('submit', handleReceivePaymentSubmit);
-    }
-    
-    if (payAdvanceForm) {
-        payAdvanceForm.addEventListener('submit', handlePayAdvanceSubmit);
-    }
-    
-    // إغلاق النماذج بالضغط على ESC
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            closeReceivePaymentModal();
-            closePayAdvanceModal();
-        }
-    });
-    
-    // إغلاق النماذج بالضغط خارج المحتوى
-    window.addEventListener('click', function(event) {
-        const receiveModal = document.getElementById('receivePaymentModal');
-        const payModal = document.getElementById('payAdvanceModal');
-        
-        if (event.target === receiveModal) closeReceivePaymentModal();
-        if (event.target === payModal) closePayAdvanceModal();
-    });
-}
 
 // =========== دوال التصحيح والاختبار ===========
 
