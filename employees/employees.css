@@ -915,3 +915,38 @@ body {
     color: #2c3e50;
     direction: ltr;
 }
+
+/* تنسيق زر التصدير */
+.btn-success {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.3s;
+}
+
+.btn-success:hover {
+    background-color: #218838;
+}
+
+.btn-success i {
+    font-size: 16px;
+}
+
+/* تنسيق الأزرار في نافذة التصدير */
+#exportCurrentBtn, #exportAllBtn {
+    justify-content: flex-end;
+    text-align: right;
+    direction: rtl;
+}
+
+#exportCurrentBtn small, #exportAllBtn small {
+    display: block;
+    margin-top: 4px;
+}

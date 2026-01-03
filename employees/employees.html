@@ -10,6 +10,8 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <!--تصدير xlsx-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -25,6 +27,9 @@
                 <button class="btn btn-primary" id="addEmployeeBtn">
                     <i class="fas fa-user-plus"></i> إضافة موظف جديد
                 </button>
+                <button class="btn btn-success" id="exportExcelBtn">
+        <i class="fas fa-file-excel"></i> تصدير إلى Excel
+    </button>
             </div>
         </nav>
 

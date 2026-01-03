@@ -400,6 +400,315 @@ function setupSearchAndFilter() {
     if (statusFilter) statusFilter.addEventListener('change', filterEmployees);
 }
 
+// === دوال تصدير إلى Excel ===
+
+// دالة لتنزيل ملف Excel
+function downloadExcel(data, filename = 'الموظفين.xlsx') {
+    // إنشاء عنصر <a> مخفي للتنزيل
+    const link = document.createElement('a');
+    link.href = data;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// دالة لتحويل البيانات إلى تنسيق Excel (CSV)
+function exportToExcel() {
+    // الحصول على البيانات المعروضة حالياً (المفلترة)
+    const table = document.getElementById('employeesTable');
+    if (!table) return;
+
+    const rows = table.querySelectorAll('tbody tr');
+    
+    // إذا لم تكن هناك بيانات
+    if (rows.length === 0 || rows[0].querySelector('td').colSpan === "10") {
+        window.firebaseConfig.showMessage('error', 'لا توجد بيانات للتصدير');
+        return;
+    }
+
+    showLoading('جاري تحضير ملف Excel...');
+
+    try {
+        // تحضير رؤوس الأعمدة
+        const headers = [];
+        const headerCells = table.querySelectorAll('thead th');
+        headerCells.forEach((cell, index) => {
+            if (index < headerCells.length - 1) { // استبعاد عمود الإجراءات
+                headers.push(cell.textContent.trim());
+            }
+        });
+
+        // تحضير البيانات
+        const data = [];
+        
+        // إضافة رؤوس الأعمدة
+        data.push(headers);
+        
+        // إضافة صفوف البيانات
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            const rowData = [];
+            
+            cells.forEach((cell, index) => {
+                if (index < cells.length - 1) { // استبعاد عمود الإجراءات
+                    // الحصول على النص الحقيقي بدون تنسيق HTML
+                    let cellText = cell.textContent.trim();
+                    
+                    // إذا كان هناك عناصر span (مثل الحالة والقسم)
+                    const span = cell.querySelector('span');
+                    if (span) {
+                        cellText = span.textContent.trim();
+                    }
+                    
+                    rowData.push(cellText);
+                }
+            });
+            
+            data.push(rowData);
+        });
+
+        // إنشاء محتوى CSV
+        let csvContent = '\uFEFF'; // BOM للتعامل مع اللغة العربية
+        
+        data.forEach(row => {
+            const formattedRow = row.map(cell => {
+                // معالجة النصوص التي تحتوي على فواصل
+                if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+                    return `"${cell.replace(/"/g, '""')}"`;
+                }
+                return cell;
+            }).join(',');
+            
+            csvContent += formattedRow + '\r\n';
+        });
+
+        // إنشاء blob وتنزيل الملف
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        // تسمية الملف بالمشروع الحالي
+        const projectName = window.firebaseConfig.projectManager.getCurrentProject().name;
+        const date = new Date().toISOString().split('T')[0];
+        const filename = `موظفين_${projectName}_${date}.csv`;
+        
+        downloadExcel(url, filename);
+        URL.revokeObjectURL(url);
+        
+        hideLoading();
+        window.firebaseConfig.showMessage('success', 'تم تصدير البيانات بنجاح');
+        
+    } catch (error) {
+        console.error('خطأ في التصدير:', error);
+        hideLoading();
+        window.firebaseConfig.showMessage('error', 'حدث خطأ أثناء التصدير');
+    }
+}
+
+// دالة لتصدير البيانات الأصلية (غير المفلترة) من Firebase
+async function exportAllEmployeesToExcel() {
+    if (!window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) {
+        return;
+    }
+
+    showLoading('جاري تحضير جميع بيانات الموظفين...');
+
+    try {
+        const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
+        
+        // جلب جميع الموظفين من Firebase
+        const snapshot = await window.firebaseConfig.db.collection('projects')
+            .doc(projectId)
+            .collection('employees')
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        if (snapshot.empty) {
+            hideLoading();
+            window.firebaseConfig.showMessage('error', 'لا توجد بيانات للتصدير');
+            return;
+        }
+
+        // تحضير رؤوس الأعمدة
+        const headers = [
+            'اسم الموظف',
+            'الوظيفة',
+            'القسم',
+            'الراتب (دينار عراقي)',
+            'رقم الهاتف',
+            'المكافآت (دينار عراقي)',
+            'المخالفات (دينار عراقي)',
+            'الحالة',
+            'تاريخ التعيين',
+            'العنوان',
+            'ملاحظات'
+        ];
+
+        // تحضير البيانات
+        const data = [headers];
+        
+        snapshot.forEach(doc => {
+            const emp = doc.data();
+            
+            const rowData = [
+                emp.name || '',
+                emp.position || '',
+                emp.department || '',
+                window.firebaseConfig.formatCurrency(emp.salary || 0),
+                emp.phone || '',
+                window.firebaseConfig.formatCurrency(emp.bonuses || 0),
+                window.firebaseConfig.formatCurrency(emp.violations || 0),
+                emp.status || 'نشط',
+                emp.hireDate ? (emp.hireDate.toDate ? emp.hireDate.toDate().toLocaleDateString('ar-IQ') : emp.hireDate) : '',
+                emp.address || '',
+                emp.notes || ''
+            ];
+            
+            data.push(rowData);
+        });
+
+        // إنشاء محتوى CSV
+        let csvContent = '\uFEFF'; // BOM للتعامل مع اللغة العربية
+        
+        data.forEach(row => {
+            const formattedRow = row.map(cell => {
+                if (cell === null || cell === undefined) cell = '';
+                const cellStr = String(cell);
+                
+                if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+                    return `"${cellStr.replace(/"/g, '""')}"`;
+                }
+                return cellStr;
+            }).join(',');
+            
+            csvContent += formattedRow + '\r\n';
+        });
+
+        // إنشاء blob وتنزيل الملف
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        // تسمية الملف بالمشروع الحالي
+        const projectName = window.firebaseConfig.projectManager.getCurrentProject().name;
+        const date = new Date().toISOString().split('T')[0];
+        const filename = `جميع_موظفين_${projectName}_${date}.csv`;
+        
+        downloadExcel(url, filename);
+        URL.revokeObjectURL(url);
+        
+        hideLoading();
+        window.firebaseConfig.showMessage('success', 'تم تصدير جميع البيانات بنجاح');
+        
+    } catch (error) {
+        console.error('خطأ في التصدير:', error);
+        hideLoading();
+        window.firebaseConfig.showMessage('error', 'حدث خطأ أثناء التصدير');
+    }
+}
+
+// دالة لعرض خيارات التصدير
+function showExportOptions() {
+    // إنشاء نافذة خيارات التصدير
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'exportModal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="
+            background: white;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            overflow: hidden;
+        ">
+            <div class="modal-header" style="
+                background: #2c3e50;
+                color: white;
+                padding: 15px 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            ">
+                <h3 style="margin: 0;"><i class="fas fa-file-export"></i> تصدير البيانات</h3>
+                <button class="close-btn" style="
+                    background: none;
+                    border: none;
+                    color: white;
+                    font-size: 24px;
+                    cursor: pointer;
+                ">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <p style="margin-bottom: 20px; color: #555;">اختر نوع البيانات التي تريد تصديرها:</p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button class="btn btn-success" id="exportCurrentBtn" style="
+                        padding: 12px;
+                        text-align: right;
+                        font-size: 16px;
+                    ">
+                        <i class="fas fa-table"></i> تصدير البيانات المعروضة حالياً
+                        <br>
+                        <small style="font-size: 12px; opacity: 0.8;">(البيانات بعد التصفية والبحث)</small>
+                    </button>
+                    <button class="btn btn-primary" id="exportAllBtn" style="
+                        padding: 12px;
+                        text-align: right;
+                        font-size: 16px;
+                    ">
+                        <i class="fas fa-database"></i> تصدير جميع الموظفين
+                        <br>
+                        <small style="font-size: 12px; opacity: 0.8;">(جميع الموظفين في المشروع الحالي)</small>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer" style="
+                padding: 15px 20px;
+                background: #f8f9fa;
+                text-align: left;
+                border-top: 1px solid #dee2e6;
+            ">
+                <button class="btn btn-secondary" id="cancelExportBtn" style="padding: 8px 16px;">
+                    إلغاء
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // إضافة event listeners
+    modal.querySelector('.close-btn').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    modal.querySelector('#cancelExportBtn').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    modal.querySelector('#exportCurrentBtn').addEventListener('click', () => {
+        modal.remove();
+        exportToExcel();
+    });
+    
+    modal.querySelector('#exportAllBtn').addEventListener('click', () => {
+        modal.remove();
+        exportAllEmployeesToExcel();
+    });
+}
+
 // تهيئة التطبيق عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', async function () {
     console.log('جاري تحميل صفحة الموظفين...');
@@ -427,6 +736,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('closeDeleteModal').addEventListener('click', closeDeleteEmployeeModal);
     document.getElementById('cancelDeleteBtn').addEventListener('click', closeDeleteEmployeeModal);
     document.getElementById('confirmDeleteBtn').addEventListener('click', confirmDeleteEmployee);
-
+    document.getElementById('exportExcelBtn').addEventListener('click', showExportOptions);
     console.log('تم تحميل صفحة الموظفين بنجاح');
 });
