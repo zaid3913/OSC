@@ -447,7 +447,16 @@ document.addEventListener('DOMContentLoaded', function() {
             updateCurrentProjectCard();
             
             // تحميل المشاريع
-            loadProjects();
+            // انتظر تسجيل الدخول قبل تحميل البيانات
+auth.onAuthStateChanged((user) => {
+    if (user) {
+        console.log("✅ User authenticated:", user.email);
+        loadProjects();
+    } else {
+        console.warn("❌ User not authenticated");
+    }
+});
+
             
             // إعداد الأحداث
             setupEventListeners();
