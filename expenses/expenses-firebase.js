@@ -133,17 +133,49 @@ class ImgBBService {
 const imgbbService = new ImgBBService();
 // =========== نهاية خدمة ImgBB ===========
 
-// الانتظار حتى يتم تحميل Firebase
-function waitForFirebase(maxAttempts = 20, interval = 100) {
+// =========== التحقق من التوثيق ===========
+async function initializeAuth() {
+    try {
+        // التحقق من التوثيق
+        const permissions = await window.firebaseConfig.protectPage();
+        
+        if (!permissions) {
+            return false;
+        }
+        
+        // حفظ بيانات المستخدم
+        window.currentUser = permissions;
+        return true;
+        
+    } catch (error) {
+        console.error('خطأ في التوثيق:', error);
+        window.location.href = '../login.html';
+        return false;
+    }
+}
+
+// الانتظار حتى يتم تحميل Firebase مع التوثيق
+function waitForFirebaseConfig(maxAttempts = 20, interval = 100) {
     return new Promise((resolve, reject) => {
         let attempts = 0;
 
         function check() {
             attempts++;
 
-            if (window.db && window.auth) {
+            if (window.firebaseConfig && window.firebaseConfig.db) {
                 console.log('✅ Firebase جاهز');
-                resolve({ db: window.db, auth: window.auth });
+                // التحقق من التوثيق بعد تحميل Firebase
+                initializeAuth().then(authSuccess => {
+                    if (authSuccess) {
+                        resolve({ 
+                            db: window.db, 
+                            auth: window.auth,
+                            firebaseConfig: window.firebaseConfig 
+                        });
+                    } else {
+                        reject(new Error('❌ فشل التوثيق'));
+                    }
+                });
             } else if (attempts >= maxAttempts) {
                 reject(new Error('❌ Firebase لم يتم تحميله'));
             } else {
