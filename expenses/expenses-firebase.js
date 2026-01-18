@@ -327,6 +327,21 @@ function openAddExpenseModal() {
     
     resetImageUpload();
     
+    // إضافة console.log للتحقق
+    console.log('Opening modal - setting default payment status');
+    const paidRadio = document.querySelector('input[name="paymentStatus"][value="paid"]');
+    const unpaidRadio = document.querySelector('input[name="paymentStatus"][value="unpaid"]');
+    
+    console.log('Paid radio found:', !!paidRadio);
+    console.log('Unpaid radio found:', !!unpaidRadio);
+    
+    if (paidRadio) {
+        paidRadio.checked = true;
+        console.log('Paid radio checked:', paidRadio.checked);
+    } else {
+        console.error('Paid radio not found!');
+    }
+    
     document.getElementById('modalTitle').textContent = 'تسجيل مصروف جديد';
     document.getElementById('expenseModal').style.display = 'flex';
 }
@@ -347,6 +362,14 @@ function openEditExpenseModal(expenseId) {
     document.getElementById('employeeName').value = expense.employeeName || '';
     document.getElementById('expenseDescription').value = expense.description || '';
     document.getElementById('expenseNotes').value = expense.notes || '';
+
+    if (expense.paymentStatus) {
+    const radio = document.querySelector(
+        `input[name="paymentStatus"][value="${expense.paymentStatus}"]`
+    );
+    if (radio) radio.checked = true;
+}
+
     
     if (expense.receiptImage?.thumbUrl) {
         currentImageUrl = expense.receiptImage.thumbUrl;
@@ -730,6 +753,13 @@ async function addExpense(expenseData) {
     try {
         showLoading('جاري إضافة المصروف...');
         
+        // 🔍 التحقق من الرصيد قبل الإضافة
+        console.log('🔍 === فحص الرصيد قبل الإضافة ===');
+        const balanceBefore = await window.firebaseConfig.calculateTotalBalance();
+        console.log('الرصيد قبل الإضافة:', balanceBefore);
+        console.log('حالة المصروف:', expenseData.paymentStatus);
+        console.log('مبلغ المصروف:', expenseData.amount);
+        
         let imageUploadResult = null;
         if (currentImageFile) {
             imageUploadResult = await uploadExpenseImage();
@@ -747,15 +777,21 @@ async function addExpense(expenseData) {
             expenseData.date = firebase.firestore.Timestamp.fromDate(new Date(expenseData.date));
         }
         
-        // 1. تحديث رصيد المشروع أولاً (تنقص من الرصيد)
-        if (window.firebaseConfig.updateProjectBalance) {
-            await window.firebaseConfig.updateProjectBalance(expenseData.amount, 'decrease');
+        // ✅ تحديث رصيد المشروع فقط إذا كان المصروف مسدد
+        console.log('Adding expense with paymentStatus:', expenseData.paymentStatus);
+        
+        if (expenseData.paymentStatus === 'paid') {
+            if (window.firebaseConfig.updateProjectBalance) {
+                await window.firebaseConfig.updateProjectBalance(expenseData.amount, 'decrease');
+            } else {
+                await updateProjectBalanceDirectly(expenseData.amount, 'decrease');
+            }
+            console.log('تم خصم الرصيد لأن المصروف مسدد');
         } else {
-            // إذا لم توجد الدالة، استخدم الطريقة المباشرة
-            await updateProjectBalanceDirectly(expenseData.amount, 'decrease');
+            console.log('لم يتم خصم الرصيد لأن المصروف غير مسدد');
         }
         
-        // 2. إضافة المصروف
+        // إضافة المصروف
         const expenseRef = await window.firebaseConfig.db.collection('projects').doc(projectId)
             .collection('expenses')
             .add(expenseData);
@@ -769,7 +805,18 @@ async function addExpense(expenseData) {
             });
         }
         
-        window.firebaseConfig.showMessage('success', 'تم إضافة المصروف بنجاح وتقليل الرصيد');
+        // 🔍 التحقق من الرصيد بعد الإضافة
+        console.log('🔍 === فحص الرصيد بعد الإضافة ===');
+        const balanceAfter = await window.firebaseConfig.calculateTotalBalance();
+        console.log('الرصيد بعد الإضافة:', balanceAfter);
+        console.log('الفرق في الرصيد:', balanceAfter - balanceBefore);
+        
+        if (balanceAfter !== balanceBefore && expenseData.paymentStatus === 'unpaid') {
+            console.warn('⚠️ تحذير: الرصيد تغير رغم أن المصروف غير مسدد!');
+            console.warn('قد يكون هناك خطأ في حساب الرصيد في مكان آخر');
+        }
+        
+        window.firebaseConfig.showMessage('success', 'تم إضافة المصروف بنجاح');
         closeExpenseModal();
         loadExpenses();
         
@@ -879,15 +926,18 @@ async function deleteExpense(expenseId) {
     try {
         showLoading('جاري حذف المصروف...');
         
-        // إعادة الرصيد عند الحذف (زيادة الرصيد)
-        const amount = parseFloat(expense.amount) || 0;
-        if (amount > 0) {
-            if (window.firebaseConfig.updateProjectBalance) {
-                await window.firebaseConfig.updateProjectBalance(amount, 'increase');
-            } else {
-                await updateProjectBalanceDirectly(amount, 'increase');
-            }
-        }
+        // ✅ إعادة الرصيد عند الحذف فقط إذا كان المصروف مسدد
+const amount = parseFloat(expense.amount) || 0;
+const status = expense.paymentStatus || 'paid';
+
+if (status === 'paid' && amount > 0) {
+    if (window.firebaseConfig.updateProjectBalance) {
+        await window.firebaseConfig.updateProjectBalance(amount, 'increase');
+    } else {
+        await updateProjectBalanceDirectly(amount, 'increase');
+    }
+}
+
         
         if (expense.receiptImage?.deleteUrl) {
             await deleteExpenseImage(expense.receiptImage);
@@ -1170,6 +1220,17 @@ function displayRecipientReport(
 async function handleExpenseSubmit(e) {
     e.preventDefault();
     
+    // قراءة حالة التسديد بشكل موثوق
+    let paymentStatus = 'paid'; // القيمة الافتراضية
+    const paidRadio = document.querySelector('input[name="paymentStatus"][value="paid"]');
+    const unpaidRadio = document.querySelector('input[name="paymentStatus"][value="unpaid"]');
+    
+    if (unpaidRadio && unpaidRadio.checked) {
+        paymentStatus = 'unpaid';
+    } else if (paidRadio && paidRadio.checked) {
+        paymentStatus = 'paid';
+    }
+    
     const expenseData = {
         expenseNumber: document.getElementById('expenseNumber').value.trim(),
         type: document.getElementById('expenseType').value,
@@ -1179,8 +1240,14 @@ async function handleExpenseSubmit(e) {
         recipient: document.getElementById('recipient').value.trim(),
         employeeName: document.getElementById('employeeName').value.trim(),
         description: document.getElementById('expenseDescription').value.trim(),
-        notes: document.getElementById('expenseNotes').value.trim()
+        notes: document.getElementById('expenseNotes').value.trim(),
+        paymentStatus: paymentStatus // استخدم القيمة المحسوبة
     };
+    
+    // إضافة console.log للتشخيص
+    console.log('paymentStatus in submit:', paymentStatus);
+    console.log('Paid radio checked:', paidRadio?.checked);
+    console.log('Unpaid radio checked:', unpaidRadio?.checked);
     
     if (currentExpenseId) {
         await updateExpense(currentExpenseId, expenseData);
@@ -1193,29 +1260,115 @@ async function handleExpenseSubmit(e) {
 function updateExpenseSummary() {
     if (!window.firebaseConfig) return;
     
-    let totalExpenses = 0;
+    let totalPaidExpenses = 0;
+    let totalUnpaidExpenses = 0;
     let totalSalaries = 0;
     let totalOther = 0;
+    let unpaidCount = 0;
     
     expenses.forEach(expense => {
         const amount = parseFloat(expense.amount) || 0;
-        totalExpenses += amount;
+        const status = expense.paymentStatus || 'paid';
         
-        if (expense.type === 'راتب') {
-            totalSalaries += amount;
+        if (status === 'paid') {
+            totalPaidExpenses += amount;
+            
+            if (expense.type === 'راتب') {
+                totalSalaries += amount;
+            } else {
+                totalOther += amount;
+            }
         } else {
-            totalOther += amount;
+            totalUnpaidExpenses += amount;
+            unpaidCount++;
         }
     });
     
-    const totalExpensesEl = document.getElementById('totalExpensesAmount');
-    const salariesEl = document.getElementById('salariesAmount');
-    const otherExpensesEl = document.getElementById('otherExpensesAmount');
+    // تحديث البطاقات
+    document.getElementById('totalExpensesAmount').textContent = 
+        window.firebaseConfig.formatCurrency(totalPaidExpenses);
+    document.getElementById('salariesAmount').textContent = 
+        window.firebaseConfig.formatCurrency(totalSalaries);
+    document.getElementById('otherExpensesAmount').textContent = 
+        window.firebaseConfig.formatCurrency(totalOther);
     
-    if (totalExpensesEl) totalExpensesEl.textContent = window.firebaseConfig.formatCurrency(totalExpenses);
-    if (salariesEl) salariesEl.textContent = window.firebaseConfig.formatCurrency(totalSalaries);
-    if (otherExpensesEl) otherExpensesEl.textContent = window.firebaseConfig.formatCurrency(totalOther);
+    // تحديث بطاقة المصروفات غير المسددة
+    const unpaidAmountEl = document.getElementById('unpaidExpensesAmount');
+    const unpaidCountEl = document.getElementById('unpaidExpensesCount');
+    
+    if (unpaidAmountEl) {
+        unpaidAmountEl.textContent = window.firebaseConfig.formatCurrency(totalUnpaidExpenses);
+    }
+    if (unpaidCountEl) {
+        unpaidCountEl.textContent = `${unpaidCount} مصروف`;
+    }
 }
+//======تحديث حالة التسديد=======
+async function markExpenseAsPaid(expenseId) {
+    if (!window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) return;
+
+    const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
+
+    try {
+        if (!confirm('تأكيد: تريد تسديد هذا المصروف؟')) return;
+
+        showLoading('جاري تسديد المصروف...');
+
+        const expenseRef = window.firebaseConfig.db
+            .collection('projects')
+            .doc(projectId)
+            .collection('expenses')
+            .doc(expenseId);
+
+        const snap = await expenseRef.get();
+        if (!snap.exists) {
+            hideLoading();
+            return;
+        }
+
+        const expense = snap.data();
+        const status = expense.paymentStatus || 'paid';
+
+        // حماية: إذا مسدد مسبقاً
+        if (status === 'paid') {
+            hideLoading();
+            window.firebaseConfig.showMessage('info', 'هذا المصروف مسدد مسبقاً');
+            return;
+        }
+
+        const amount = parseFloat(expense.amount) || 0;
+        if (amount <= 0) {
+            hideLoading();
+            window.firebaseConfig.showMessage('error', 'مبلغ المصروف غير صحيح');
+            return;
+        }
+
+        // 1) خصم الرصيد الآن
+        if (window.firebaseConfig.updateProjectBalance) {
+            await window.firebaseConfig.updateProjectBalance(amount, 'decrease');
+        } else {
+            await updateProjectBalanceDirectly(amount, 'decrease');
+        }
+
+        // 2) تحديث الحالة إلى مسدد
+        await expenseRef.update({
+            paymentStatus: 'paid',
+            paidAt: firebase.firestore.Timestamp.now(),
+            updatedAt: firebase.firestore.Timestamp.now()
+        });
+
+        hideLoading();
+        window.firebaseConfig.showMessage('success', 'تم تسديد المصروف وتحديث الرصيد');
+        loadExpenses();
+
+    } catch (error) {
+        console.error('Error paying expense:', error);
+        hideLoading();
+        window.firebaseConfig.showMessage('error', 'تعذر تسديد المصروف');
+    }
+}
+
+
 
 // =========== عرض المصاريف في الجدول ===========
 function displayExpenses(list) {
@@ -1227,7 +1380,7 @@ function displayExpenses(list) {
     if (list.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" style="text-align: center; padding: 40px;">
+                <td colspan="13" style="text-align: center; padding: 40px;">
                     <i class="fas fa-file-invoice-dollar" style="font-size: 48px; color: #ccc; margin-bottom: 15px; display: block;"></i>
                     <p style="color: #666;">لا يوجد مصاريف مسجلة بعد</p>
                 </td>
@@ -1267,32 +1420,53 @@ function displayExpenses(list) {
             `;
         }
         
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${index + 1}</td>
-            <td>${expense.expenseNumber || ''}</td>
-            <td><span class="expense-type-badge type-${expense.type || 'أخرى'}">${expense.type || ''}</span></td>
-            <td>${window.firebaseConfig.formatCurrency(expense.amount || 0)}</td>
-            <td>
-                <span class="recipient-name">${expense.recipient || ''}</span>
-                ${isRecipient ? '<i class="fas fa-user-check recipient-icon" title="مخول من قسم السلف"></i>' : ''}
-            </td>
-            <td>${expense.employeeName || ''}</td>
-            <td>${formatDate(expense.date)}</td>
-            <td>${expense.paymentMethod || ''}</td>
-            <td>${expense.description || ''}</td>
-            <td>${imageCell}</td>
-            <td>${expense.notes || ''}</td>
-            <td>
-                <button class="btn btn-info btn-sm" onclick="openEditExpenseModal('${expense.id}')">
-                    <i class="fas fa-edit"></i> تعديل
-                </button>
-                <button class="btn btn-danger btn-sm" onclick="deleteExpense('${expense.id}')">
-                    <i class="fas fa-trash"></i> حذف
-                </button>
-            </td>
-        `;
-        tbody.appendChild(tr);
+        const status = expense.paymentStatus || 'paid';
+
+const tr = document.createElement('tr');
+tr.innerHTML = `
+    <td>${index + 1}</td>
+    <td>${expense.expenseNumber || ''}</td>
+    <td><span class="expense-type-badge type-${expense.type || 'أخرى'}">${expense.type || ''}</span></td>
+    <td>${window.firebaseConfig.formatCurrency(expense.amount || 0)}</td>
+    <td>
+        <span class="recipient-name">${expense.recipient || ''}</span>
+        ${isRecipient ? '<i class="fas fa-user-check recipient-icon" title="مخول من قسم السلف"></i>' : ''}
+    </td>
+    <td>${expense.employeeName || ''}</td>
+    <td>${formatDate(expense.date)}</td>
+    <td>${expense.paymentMethod || ''}</td>
+
+    <td>
+        ${
+            status === 'paid'
+            ? '<span style="color:#2ecc71;font-weight:bold;">مسدد</span>'
+            : '<span style="color:#e67e22;font-weight:bold;">غير مسدد</span>'
+        }
+    </td>
+
+    <td>${expense.description || ''}</td>
+    <td>${imageCell}</td>
+    <td>${expense.notes || ''}</td>
+
+    <td>
+        ${
+            status === 'unpaid'
+            ? `<button class="btn btn-success btn-sm" onclick="markExpenseAsPaid('${expense.id}')">
+                   <i class="fas fa-check"></i> تسديد
+               </button>`
+            : ''
+        }
+
+        <button class="btn btn-info btn-sm" onclick="openEditExpenseModal('${expense.id}')">
+            <i class="fas fa-edit"></i> تعديل
+        </button>
+
+        <button class="btn btn-danger btn-sm" onclick="deleteExpense('${expense.id}')">
+            <i class="fas fa-trash"></i> حذف
+        </button>
+    </td>
+`;
+tbody.appendChild(tr);
     });
 }
 
@@ -1303,15 +1477,11 @@ function exportFilteredExpensesToExcel() {
     console.log('زر التصدير للمصاريف تم النقر عليه');
     
     try {
-        // جمع البيانات المفلترة من الجدول المعروض حالياً
-        const tableBody = document.getElementById('expensesTableBody');
-        if (!tableBody) {
-            throw new Error('الجدول غير موجود');
-        }
+        // استخدام البيانات المفلترة مباشرة بدلاً من الجدول المعروض
+        const filteredExpenses = getFilteredExpenses();
         
-        // التحقق من وجود صفوف
-        const rows = tableBody.querySelectorAll('tr');
-        if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('td[colspan]'))) {
+        // التحقق من وجود بيانات
+        if (filteredExpenses.length === 0) {
             window.firebaseConfig.showMessage('warning', 'لا توجد بيانات معروضة للتصدير');
             return;
         }
@@ -1330,7 +1500,7 @@ function exportFilteredExpensesToExcel() {
         data.push(['تقرير المصاريف المفلترة']);
         data.push([`المشروع: ${project.name}`]);
         data.push([`تاريخ التصدير: ${reportDate} ${reportTime}`]);
-        data.push([`عدد السجلات: ${getVisibleRowCount()} سجل`]);
+        data.push([`عدد السجلات: ${filteredExpenses.length} سجل`]);
         data.push(['']); // سطر فارغ
         
         // === معلومات التصفية ===
@@ -1344,6 +1514,10 @@ function exportFilteredExpensesToExcel() {
                               "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
             data.push([`- الشهر: ${monthNames[parseInt(month) - 1]} ${year}`]);
         }
+        // حالة التسديد
+        if (filterInfo.paymentStatus) {
+            data.push([`- حالة التسديد: ${filterInfo.paymentStatus === 'paid' ? 'مسدد' : 'غير مسدد'}`]);
+        }
         data.push(['']); // سطر فارغ
         
         // === رؤوس الجدول ===
@@ -1356,107 +1530,64 @@ function exportFilteredExpensesToExcel() {
             'الموظف',
             'التاريخ',
             'طريقة الدفع',
+            'حالة التسديد',
             'الوصف',
             'ملاحظات',
             'صورة الوصل'
         ];
         data.push(tableHeaders);
         
-        // === بيانات الجدول المفلتر ===
+        // === بيانات الجدول من البيانات المفلترة مباشرة ===
         let totalAmount = 0;
-        let rowIndex = 0;
+        let paidAmount = 0;
+        let unpaidAmount = 0;
+        let paidCount = 0;
+        let unpaidCount = 0;
         
-        rows.forEach((row) => {
-            const cells = row.querySelectorAll('td');
-            
-            // تخطي الصفوف الفارغة أو رسائل عدم وجود بيانات
-            if (cells.length < 3 || row.querySelector('td[colspan]')) {
-                return;
-            }
-            
-            rowIndex++;
-            
-            // استخراج البيانات من الخلايا
-            const amountCell = cells[3];
-            let amount = 0;
-            
-            // استخراج المبلغ من البيانات الأصلية بدلاً من النص المعروض
-            const rowDataIndex = Array.from(tableBody.children).indexOf(row);
-            if (rowDataIndex >= 0) {
-                // البحث عن المصروف المناسب في القائمة المفلترة
-                const filteredExpenses = getFilteredExpenses();
-                if (filteredExpenses[rowDataIndex]) {
-                    amount = parseFloat(filteredExpenses[rowDataIndex].amount || 0);
-                }
-            }
-            
-            // إذا لم نتمكن من الحصول على المبلغ من البيانات، استخدم النص المعروض
-            if (amount === 0 && amountCell) {
-                // الطريقة الآمنة لاستخراج الرقم من النص المعروض
-                const amountText = amountCell.textContent || '0';
-                
-                // استخدام دالة مساعدة لاستخراج الرقم من النص المعروض
-                amount = extractNumberFromText(amountText);
-            }
-            
-            // تأكد أن المبلغ ليس NaN
-            if (isNaN(amount)) {
-                amount = 0;
-            }
-            
+        filteredExpenses.forEach((expense, index) => {
+            const amount = parseFloat(expense.amount) || 0;
             totalAmount += amount;
             
-            // استخراج نوع المصروف من البادج
-            const typeBadge = cells[2]?.querySelector('.expense-type-badge');
-            const type = typeBadge ? typeBadge.textContent.trim() : (cells[2]?.textContent || '');
+            const status = expense.paymentStatus || 'paid';
+            const statusText = status === 'paid' ? 'مسدد' : 'غير مسدد';
             
-            // استخراج اسم المخول (دون أيقونة)
-            let recipient = cells[4]?.textContent || '';
-            // إزالة أيقونة المخول إذا كانت موجودة
-            const recipientSpan = cells[4]?.querySelector('.recipient-name');
-            if (recipientSpan) {
-                recipient = recipientSpan.textContent.trim();
+            if (status === 'paid') {
+                paidAmount += amount;
+                paidCount++;
+            } else {
+                unpaidAmount += amount;
+                unpaidCount++;
             }
             
-            // استخراج معلومات الصورة
+            // تنسيق التاريخ
+            let dateFormatted = '';
+            if (expense.date) {
+                const expenseDate = expense.date.toDate ? expense.date.toDate() : new Date(expense.date);
+                dateFormatted = expenseDate.toLocaleDateString('ar-IQ', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+            }
+            
+            // حالة الصورة
             let imageInfo = 'لا يوجد';
-            const img = cells[9]?.querySelector('img');
-            if (img) {
+            if (expense.receiptImage && expense.receiptImage.url) {
                 imageInfo = 'مرفوعة';
             }
             
-            // استخراج التاريخ بشكل آمن
-            const dateCell = cells[6];
-            let dateText = '-';
-            if (dateCell) {
-                dateText = dateCell.textContent.trim() || '-';
-            }
-            
-            // استخراج الوصف بشكل آمن
-            const descriptionCell = cells[8];
-            let description = '-';
-            if (descriptionCell) {
-                description = descriptionCell.textContent.trim() || '-';
-            }
-            
-            // استخراج الملاحظات بشكل آمن
-            const notesCell = cells[10];
-            let notes = '-';
-            if (notesCell) {
-                notes = notesCell.textContent.trim() || '-';
-            }
-            
             const excelRow = [
-                rowIndex, // المسلسل
-                cells[1]?.textContent?.trim() || '-', // رقم الفاتورة
-                type, // نوع المصروف
-                amount, // المبلغ (كرقم)
-                recipient, // المخول
-                cells[5]?.textContent?.trim() || '-', // الموظف
-                dateText, // التاريخ
-                cells[7]?.textContent?.trim() || '-', // طريقة الدفع
-                description, // الوصف
-                notes, // الملاحظات
+                index + 1, // المسلسل
+                expense.expenseNumber || '-', // رقم الفاتورة
+                expense.type || '-', // نوع المصروف
+                amount, // المبلغ
+                expense.recipient || '-', // المخول
+                expense.employeeName || '-', // الموظف
+                dateFormatted, // التاريخ
+                expense.paymentMethod || '-', // طريقة الدفع
+                statusText, // حالة التسديد ⭐ هذا هو المهم
+                expense.description || '-', // الوصف
+                expense.notes || '-', // الملاحظات
                 imageInfo // حالة الصورة
             ];
             data.push(excelRow);
@@ -1466,11 +1597,21 @@ function exportFilteredExpensesToExcel() {
         data.push(['']); // سطر فارغ
         data.push(['ملخص البيانات المفلترة:']);
         data.push(['إجمالي المبلغ:', totalAmount]);
+        data.push(['المبلغ المسدد:', paidAmount]);
+        data.push(['المبلغ غير المسدد:', unpaidAmount]);
         
         // حساب المتوسط بطريقة آمنة
-        const averageAmount = rowIndex > 0 ? (totalAmount / rowIndex).toFixed(2) : '0.00';
+        const averageAmount = filteredExpenses.length > 0 ? 
+            (totalAmount / filteredExpenses.length).toFixed(2) : '0.00';
         data.push(['متوسط المبلغ:', averageAmount]);
-        data.push(['عدد المعاملات:', rowIndex]);
+        data.push(['عدد المعاملات:', filteredExpenses.length]);
+        data.push(['عدد المسدد:', paidCount]);
+        data.push(['عدد غير المسدد:', unpaidCount]);
+        
+        if (totalAmount > 0) {
+            data.push(['نسبة المسدد:', Math.round((paidAmount / totalAmount) * 100) || 0, '%']);
+            data.push(['نسبة غير المسدد:', Math.round((unpaidAmount / totalAmount) * 100) || 0, '%']);
+        }
         
         // === إنشاء ورقة عمل ===
         const ws = XLSX.utils.aoa_to_sheet(data);
@@ -1485,6 +1626,7 @@ function exportFilteredExpensesToExcel() {
             {wch: 20},  // الموظف
             {wch: 15},  // التاريخ
             {wch: 12},  // طريقة الدفع
+            {wch: 12},  // حالة التسديد
             {wch: 30},  // الوصف
             {wch: 25},  // الملاحظات
             {wch: 12}   // الصورة
@@ -1496,24 +1638,47 @@ function exportFilteredExpensesToExcel() {
         
         // تنسيق المبالغ في السطور التي تحتوي على بيانات
         // بدءاً من السطر بعد العناوين (الصف الأول من البيانات)
-        const dataStartRow = 7; // بعد العناوين والمعلومات
-        for (let R = dataStartRow; R <= range.e.r; ++R) {
-            const address = XLSX.utils.encode_cell({r:R, c:3}); // العمود الرابع (المبالغ)
-            const cell = ws[address];
+        const headerRows = 7; // عدد صفوف العناوين والمعلومات
+        for (let R = headerRows; R <= range.e.r; ++R) {
+            const amountAddress = XLSX.utils.encode_cell({r:R, c:3}); // العمود الرابع (المبالغ)
+            const cell = ws[amountAddress];
             
             if (cell && typeof cell.v === 'number') {
-                // تأكد أن القيمة رقمية
                 cell.t = 'n'; // نوع رقمي
                 cell.z = '#,##0.00'; // تنسيق رقمي مع فواصل آلاف
             }
         }
         
-        // تنسيق خلية المجموع
-        const totalRow = range.e.r - 3; // صف المجموع
-        const totalAddress = XLSX.utils.encode_cell({r: totalRow, c: 1}); // خلية المجموع
+        // تنسيق خلايا المجموع
+        const summaryStartRow = range.e.r - (totalAmount > 0 ? 10 : 8); // بداية قسم الملخص
+        
+        // إجمالي المبلغ
+        const totalAddress = XLSX.utils.encode_cell({r: summaryStartRow, c: 1});
         if (ws[totalAddress]) {
             ws[totalAddress].t = 'n';
             ws[totalAddress].z = '#,##0.00';
+        }
+        
+        // المبلغ المسدد
+        const paidAddress = XLSX.utils.encode_cell({r: summaryStartRow + 1, c: 1});
+        if (ws[paidAddress]) {
+            ws[paidAddress].t = 'n';
+            ws[paidAddress].z = '#,##0.00';
+        }
+        
+        // المبلغ غير المسدد
+        const unpaidAddress = XLSX.utils.encode_cell({r: summaryStartRow + 2, c: 1});
+        if (ws[unpaidAddress]) {
+            ws[unpaidAddress].t = 'n';
+            ws[unpaidAddress].z = '#,##0.00';
+        }
+        
+        // متوسط المبلغ
+        const averageAddress = XLSX.utils.encode_cell({r: summaryStartRow + 4, c: 1});
+        if (ws[averageAddress] && !isNaN(parseFloat(averageAmount))) {
+            ws[averageAddress].v = parseFloat(averageAmount);
+            ws[averageAddress].t = 'n';
+            ws[averageAddress].z = '#,##0.00';
         }
         
         // === إنشاء ملف Excel ===
@@ -1524,7 +1689,16 @@ function exportFilteredExpensesToExcel() {
         const fileName = `مصاريف_${project.name.replace(/[^\w\u0600-\u06FF]/g, '_')}_${getFilterFileNamePart(filterInfo)}_${new Date().getTime()}.xlsx`;
         XLSX.writeFile(wb, fileName);
         
-        window.firebaseConfig.showMessage('success', `تم تصدير ${rowIndex} سجل إلى Excel بنجاح`);
+        window.firebaseConfig.showMessage('success', 
+            `تم تصدير ${filteredExpenses.length} سجل إلى Excel بنجاح`);
+        
+        // إضافة console.log للتحقق
+        console.log('✅ تم التصدير بنجاح');
+        console.log('📊 عدد السجلات المصدرة:', filteredExpenses.length);
+        console.log('🔍 معلومات التصفية:', filterInfo);
+        console.log('💰 إجمالي المبلغ:', totalAmount);
+        console.log('✅ المسدد:', paidCount, 'بمبلغ', paidAmount);
+        console.log('⏳ غير المسدد:', unpaidCount, 'بمبلغ', unpaidAmount);
         
     } catch (error) {
         console.error('خطأ في التصدير:', error);
@@ -1538,11 +1712,13 @@ function getFilteredExpenses() {
     const typeFilter = document.getElementById('typeFilter');
     const recipientFilter = document.getElementById('employeeFilter');
     const monthFilter = document.getElementById('monthFilter');
+    const paymentStatusFilter = document.getElementById('paymentStatusFilter'); // أضف هذا
     
     const searchTerm = searchInput.value.toLowerCase();
     const type = typeFilter.value;
     const recipient = recipientFilter.value;
     const month = monthFilter.value;
+    const paymentStatus = paymentStatusFilter.value; // أضف هذا
     
     return expenses.filter(expense => {
         const matchesSearch = !searchTerm || 
@@ -1561,7 +1737,11 @@ function getFilteredExpenses() {
             matchesMonth = expenseYearMonth === month;
         }
 
-        return matchesSearch && matchesType && matchesRecipient && matchesMonth;
+        // ⭐ أضف هذا: فلتر حالة التسديد
+        const matchesPaymentStatus = !paymentStatus || 
+            (expense.paymentStatus || 'paid') === paymentStatus;
+
+        return matchesSearch && matchesType && matchesRecipient && matchesMonth && matchesPaymentStatus;
     });
 }
 
@@ -1785,7 +1965,8 @@ function getCurrentFilterInfo() {
         search: document.getElementById('searchInput').value,
         type: document.getElementById('typeFilter').value,
         recipient: document.getElementById('employeeFilter').value,
-        month: document.getElementById('monthFilter').value
+        month: document.getElementById('monthFilter').value,
+        paymentStatus: document.getElementById('paymentStatusFilter').value 
     };
 }
 
@@ -1826,6 +2007,11 @@ function getFilterFileNamePart(filterInfo) {
     
     if (filterInfo.month) {
         parts.push(filterInfo.month.replace('-', '_'));
+    }
+    
+    // ⭐ أضف هذا: حالة التسديد
+    if (filterInfo.paymentStatus) {
+        parts.push(filterInfo.paymentStatus === 'paid' ? 'مسدد' : 'غير_مسدد');
     }
     
     if (parts.length === 0) {
@@ -1954,12 +2140,14 @@ function setupSearchAndFilter() {
     const typeFilter = document.getElementById('typeFilter');
     const recipientFilter = document.getElementById('employeeFilter');
     const monthFilter = document.getElementById('monthFilter');
+    const paymentStatusFilter = document.getElementById('paymentStatusFilter'); // أضف هذا
 
     function filterExpenses() {
         const searchTerm = searchInput.value.toLowerCase();
         const type = typeFilter.value;
         const recipient = recipientFilter.value;
         const month = monthFilter.value;
+        const paymentStatus = paymentStatusFilter.value; // أضف هذا
 
         const filtered = expenses.filter(expense => {
             const matchesSearch = !searchTerm || 
@@ -1978,7 +2166,11 @@ function setupSearchAndFilter() {
                 matchesMonth = expenseYearMonth === month;
             }
 
-            return matchesSearch && matchesType && matchesRecipient && matchesMonth;
+            // ⭐ أضف هذا: فلتر حالة التسديد
+            const matchesPaymentStatus = !paymentStatus || 
+                (expense.paymentStatus || 'paid') === paymentStatus;
+
+            return matchesSearch && matchesType && matchesRecipient && matchesMonth && matchesPaymentStatus;
         });
 
         displayExpenses(filtered);
@@ -1988,6 +2180,7 @@ function setupSearchAndFilter() {
     if (typeFilter) typeFilter.addEventListener('change', filterExpenses);
     if (recipientFilter) recipientFilter.addEventListener('change', filterExpenses);
     if (monthFilter) monthFilter.addEventListener('change', filterExpenses);
+    if (paymentStatusFilter) paymentStatusFilter.addEventListener('change', filterExpenses); // أضف هذا
 }
 
 // =========== تهيئة الصفحة ===========
@@ -2021,6 +2214,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             viewReportBtn.addEventListener('click', openRecipientReportModal);
         }
         
+       
+
         // زر تصدير Excel للمصاريف المفلترة
         const exportExcelBtn = document.getElementById('exportFilteredExcelBtn');
         if (exportExcelBtn) {

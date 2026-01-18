@@ -176,9 +176,13 @@ async function calculateTotalBalance() {
             .get();
         
         expensesSnapshot.forEach(doc => {
-            const expense = doc.data();
-            balance -= parseFloat(expense.amount) || 0;
-        });
+    const expense = doc.data();
+    const status = expense.paymentStatus || 'paid'; // القديم نعتبره مسدد
+    if (status === 'paid') {
+        balance -= parseFloat(expense.amount) || 0;
+    }
+});
+
         
         console.log('حساب الرصيد الشامل:', balance);
         return balance;
@@ -260,14 +264,20 @@ async function calculateAccurateBalance() {
         
         let totalExpenses = 0;
         expensesSnapshot.forEach(doc => {
-            const expense = doc.data();
-            // استبعاد دفعات المقاولين لأنها محسوبة في النقطة 3
-            if (expense.category !== 'contractor_payments') {
-                const amount = parseFloat(expense.amount) || 0;
-                totalExpenses += amount;
-                balance -= amount;
-            }
-        });
+    const expense = doc.data();
+    // استبعاد دفعات المقاولين لأنها محسوبة في النقطة 3
+    if (expense.category !== 'contractor_payments') {
+
+        const status = expense.paymentStatus || 'paid'; // القديم نعتبره مسدد
+        if (status === 'paid') {
+            const amount = parseFloat(expense.amount) || 0;
+            totalExpenses += amount;
+            balance -= amount;
+        }
+
+    }
+});
+
         console.log('إجمالي المصاريف العامة:', totalExpenses);
         
         console.log('========== النتائج ==========');
@@ -540,9 +550,13 @@ async function verifyBalanceCalculation() {
             .get();
         
         expensesSnapshot.forEach(doc => {
-            const expense = doc.data();
-            totalExpenses += parseFloat(expense.amount) || 0;
-        });
+    const expense = doc.data();
+    const status = expense.paymentStatus || 'paid'; 
+    if (status === 'paid') {
+        totalExpenses += parseFloat(expense.amount) || 0;
+    }
+});
+
         
         const calculatedBalance = totalReceived - (totalPaid - totalRefunded) - totalExpenses - totalContractorPayments;
         

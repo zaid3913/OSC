@@ -49,6 +49,16 @@
                     <p id="totalExpensesAmount">٠ دينار</p>
                 </div>
             </div>
+            <div class="summary-card unpaid-expenses">
+    <div class="summary-icon">
+        <i class="fas fa-clock"></i>
+    </div>
+    <div class="summary-content">
+        <h4>مصروفات غير مسددة</h4>
+        <p id="unpaidExpensesAmount">٠ دينار</p>
+        <small id="unpaidExpensesCount">٠ مصروف</small>
+    </div>
+</div>
             <div class="summary-card salaries-expenses">
                 <div class="summary-icon">
                     <i class="fas fa-user-tie"></i>
@@ -92,6 +102,11 @@
                     <!-- سيتم ملؤها بواسطة JavaScript -->
                 </select>
                 <input type="month" id="monthFilter">
+                <select id="paymentStatusFilter">
+        <option value="">جميع الحالات</option>
+        <option value="paid">مسدد</option>
+        <option value="unpaid">غير مسدد</option>
+    </select>
             </div>
         </div>
 
@@ -108,6 +123,7 @@
                         <th>الموظف</th>
                         <th>التاريخ</th>
                         <th>طريقة الدفع</th>
+                        <th>حالة التسديد</th>
                         <th>الوصف</th>
                         <th>صورة الوصل</th>
                         <th>ملاحظات</th>
@@ -175,6 +191,29 @@
                                 <input type="text" id="recipient" required placeholder="اسم المخول أو المستلم">
                             </div>
                         </div>
+
+                        <div class="form-row">
+    <div class="form-group">
+        <label>حالة التسديد *</label>
+
+        <div style="display:flex; gap:20px; margin-top:6px;">
+            <label style="cursor:pointer;">
+                <input type="radio" name="paymentStatus" value="paid" checked>
+                مسدد
+            </label>
+
+            <label style="cursor:pointer;">
+                <input type="radio" name="paymentStatus" value="unpaid">
+                غير مسدد
+            </label>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <!-- فراغ للمحاذاة -->
+    </div>
+</div>
+
                         
                         <div class="form-row">
                             <div class="form-group">
