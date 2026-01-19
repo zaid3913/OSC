@@ -192,22 +192,28 @@
                             </div>
                         </div>
 
-                        <div class="form-row">
-    <div class="form-group">
-        <label>حالة التسديد *</label>
+                        <div class="form-group">
+    <label>حالة التسديد *</label>
 
-        <div style="display:flex; gap:20px; margin-top:6px;">
-            <label style="cursor:pointer;">
-                <input type="radio" name="paymentStatus" value="paid" checked>
+    <div class="payment-status">
+        <label class="status-option paid">
+            <input type="radio" name="paymentStatus" value="paid" checked>
+            <span>
+                <i class="fas fa-check-circle"></i>
                 مسدد
-            </label>
+            </span>
+        </label>
 
-            <label style="cursor:pointer;">
-                <input type="radio" name="paymentStatus" value="unpaid">
+        <label class="status-option unpaid">
+            <input type="radio" name="paymentStatus" value="unpaid">
+            <span>
+                <i class="fas fa-clock"></i>
                 غير مسدد
-            </label>
-        </div>
+            </span>
+        </label>
     </div>
+</div>
+
 
     <div class="form-group">
         <!-- فراغ للمحاذاة -->

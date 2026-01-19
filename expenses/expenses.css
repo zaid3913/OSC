@@ -832,6 +832,68 @@ body {
     }
 }
 
+/* ===== Payment Status (Paid / Unpaid) ===== */
+.payment-status {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.status-option {
+    flex: 1;
+    cursor: pointer;
+}
+
+.status-option input {
+    display: none;
+}
+
+.status-option span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 18px;
+    border-radius: 14px;
+    font-weight: 800;
+    font-size: 16px;
+    border: 2px solid #e0e0e0;
+    background: #f8f9fa;
+    color: #2c3e50;
+    transition: all 0.3s ease;
+}
+
+/* مسدد */
+.status-option.paid span i {
+    color: #2ecc71;
+}
+
+/* غير مسدد */
+.status-option.unpaid span i {
+    color: #e74c3c;
+}
+
+/* عند الاختيار */
+.status-option input:checked + span {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+}
+
+/* مسدد مختار */
+.status-option.paid input:checked + span {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    color: white;
+    border-color: #27ae60;
+}
+
+/* غير مسدد مختار */
+.status-option.unpaid input:checked + span {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    border-color: #c0392b;
+}
+
+
 /* تصميم متجاوب - مصمم بنمط المقاولين */
 @media (max-width: 1200px) {
     .filter-section,
