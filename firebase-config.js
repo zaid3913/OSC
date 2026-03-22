@@ -176,9 +176,11 @@ async function calculateTotalBalance() {
             .get();
         
         expensesSnapshot.forEach(doc => {
-    const expense = doc.data();
+    const expense = doc.data() || {};
     const status = expense.paymentStatus || 'paid'; // القديم نعتبره مسدد
-    if (status === 'paid') {
+    const fundSource = expense.fundSource || expense.paymentSource || 'general';
+    const isAdvanceExpense = !!expense.advanceId || fundSource === 'advance' || fundSource === 'recipient_advance';
+    if (status === 'paid' && !isAdvanceExpense) {
         balance -= parseFloat(expense.amount) || 0;
     }
 });
@@ -264,9 +266,11 @@ async function calculateAccurateBalance() {
         
         let totalExpenses = 0;
         expensesSnapshot.forEach(doc => {
-    const expense = doc.data();
-    // استبعاد دفعات المقاولين لأنها محسوبة في النقطة 3
-    if (expense.category !== 'contractor_payments') {
+    const expense = doc.data() || {};
+    const fundSource = expense.fundSource || expense.paymentSource || 'general';
+    const isAdvanceExpense = !!expense.advanceId || fundSource === 'advance' || fundSource === 'recipient_advance';
+    // استبعاد دفعات المقاولين والمصاريف المصروفة من سلف المخولين
+    if (expense.category !== 'contractor_payments' && !isAdvanceExpense) {
 
         const status = expense.paymentStatus || 'paid'; // القديم نعتبره مسدد
         if (status === 'paid') {

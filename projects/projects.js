@@ -53,53 +53,52 @@ async function loadProjects() {
 // الحصول على إحصائيات المشروع
 async function getProjectStats(projectId) {
     try {
-        let employeesCount = 0;
-        let totalAdvances = 0;
-        let totalExpenses = 0;
-        
-        // حساب الموظفين
-        try {
-            const employeesSnapshot = await db.collection('projects').doc(projectId)
-                .collection('employees').get();
-            employeesCount = employeesSnapshot.size;
-        } catch (error) {
-            console.warn("Error getting employees:", error);
-        }
-        
-        // حساب السلف
-        try {
-            const advancesSnapshot = await db.collection('projects').doc(projectId)
-                .collection('advances').get();
-            advancesSnapshot.forEach(doc => {
-                const advance = doc.data();
-                totalAdvances += parseFloat(advance.amount) || 0;
-            });
-        } catch (error) {
-            console.warn("Error getting advances:", error);
-        }
-        
-        // حساب المصاريف
-        try {
-            const expensesSnapshot = await db.collection('projects').doc(projectId)
-                .collection('expenses').get();
-            expensesSnapshot.forEach(doc => {
-                const expense = doc.data();
-                totalExpenses += parseFloat(expense.amount) || 0;
-            });
-        } catch (error) {
-            console.warn("Error getting expenses:", error);
-        }
-        
+        const [employeesSnapshot, advancesSnapshot, expensesSnapshot, contractorPaymentsSnapshot] = await Promise.all([
+            db.collection('projects').doc(projectId).collection('employees').get(),
+            db.collection('projects').doc(projectId).collection('advances').get(),
+            db.collection('projects').doc(projectId).collection('expenses').get(),
+            db.collection('projects').doc(projectId).collection('contractorPayments').get()
+        ]);
+
+        let totalReceived = 0;
+        let totalPaidAdvances = 0;
+        let totalRefunded = 0;
+        let totalGeneralExpenses = 0;
+        let totalContractorPayments = 0;
+
+        advancesSnapshot.forEach(doc => {
+            const item = doc.data();
+            const amount = parseFloat(item.amount) || 0;
+            if (item.transactionType === 'receive') {
+                totalReceived += amount;
+            } else if (item.transactionType === 'payment') {
+                totalPaidAdvances += amount;
+                totalRefunded += parseFloat(item.refundedAmount) || 0;
+            }
+        });
+
+        expensesSnapshot.forEach(doc => {
+            const expense = doc.data();
+            const status = expense.paymentStatus || 'paid';
+            const fundSource = expense.fundSource || 'general';
+            if (status === 'paid' && fundSource === 'general') {
+                totalGeneralExpenses += parseFloat(expense.amount) || 0;
+            }
+        });
+
+        contractorPaymentsSnapshot.forEach(doc => {
+            totalContractorPayments += parseFloat(doc.data().amount) || 0;
+        });
+
         return {
-            employees: employeesCount,
-            totalAdvances: totalAdvances,
-            totalExpenses: totalExpenses,
-            balance: totalAdvances - totalExpenses
+            employees: employeesSnapshot.size,
+            totalAdvances: totalReceived,
+            totalExpenses: totalGeneralExpenses + totalContractorPayments,
+            currentBalance: totalReceived - (totalPaidAdvances - totalRefunded) - totalGeneralExpenses - totalContractorPayments
         };
-        
     } catch (error) {
-        console.error("Error getting project stats:", error);
-        return { employees: 0, totalAdvances: 0, totalExpenses: 0, balance: 0 };
+        console.error('Error getting project stats:', error);
+        return { employees: 0, totalAdvances: 0, totalExpenses: 0, currentBalance: 0 };
     }
 }
 

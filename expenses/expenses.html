@@ -107,6 +107,11 @@
         <option value="paid">مسدد</option>
         <option value="unpaid">غير مسدد</option>
     </select>
+                <select id="fundSourceFilter">
+                    <option value="">جميع مصادر الصرف</option>
+                    <option value="general">من الرصيد العام</option>
+                    <option value="advance">من سلفة مخول</option>
+                </select>
             </div>
         </div>
 
@@ -124,6 +129,7 @@
                         <th>التاريخ</th>
                         <th>طريقة الدفع</th>
                         <th>حالة التسديد</th>
+                        <th>مصدر الصرف</th>
                         <th>الوصف</th>
                         <th>صورة الوصل</th>
                         <th>ملاحظات</th>
@@ -187,8 +193,25 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label for="recipient">المخول</label>
+                                <label for="recipient">المخول / المستلم</label>
                                 <input type="text" id="recipient" required placeholder="اسم المخول أو المستلم">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="fundSource">مصدر الصرف *</label>
+                                <select id="fundSource" required>
+                                    <option value="general">من الرصيد العام</option>
+                                    <option value="advance">من سلفة مخول</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="advanceRecipientGroup" style="display:none;">
+                                <label for="advanceRecipientSelect">سلفة المخول *</label>
+                                <select id="advanceRecipientSelect">
+                                    <option value="">اختر سلفة المخول</option>
+                                </select>
+                                <small id="advanceRecipientHint" style="display:block;margin-top:6px;color:#666;"></small>
                             </div>
                         </div>
 

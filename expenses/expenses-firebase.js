@@ -6,6 +6,102 @@ let recipientsList = [];
 let currentImageFile = null;
 let currentImageUrl = null;
 let currentRecipientExpenses = []; // لتخزين مصاريف المخول الحالية للتصدير
+let filteredExpenses = [];
+
+function normalizeFundSource(value) {
+    return value === 'advance' ? 'advance' : 'general';
+}
+
+function getFundSourceLabel(value) {
+    return normalizeFundSource(value) === 'advance' ? 'من سلفة مخول' : 'من الرصيد العام';
+}
+
+async function getAdvanceById(advanceId) {
+    if (!advanceId || !window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) return null;
+    const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
+    const doc = await window.firebaseConfig.db.collection('projects').doc(projectId).collection('advances').doc(advanceId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+}
+
+async function calculateAdvanceSpent(projectId, advanceId, excludeExpenseId = null) {
+    let total = 0;
+    const snap = await window.firebaseConfig.db.collection('projects').doc(projectId).collection('expenses').where('fundSource', '==', 'advance').where('advanceId', '==', advanceId).get();
+    snap.forEach(doc => {
+        if (excludeExpenseId && doc.id === excludeExpenseId) return;
+        const exp = doc.data();
+        const status = exp.paymentStatus || 'paid';
+        if (status === 'paid') total += parseFloat(exp.amount) || 0;
+    });
+    return total;
+}
+
+async function getAdvanceAvailableAmount(projectId, advanceId, excludeExpenseId = null) {
+    const advance = await getAdvanceById(advanceId);
+    if (!advance) return 0;
+    const spent = await calculateAdvanceSpent(projectId, advanceId, excludeExpenseId);
+    const amount = parseFloat(advance.amount) || 0;
+    const refunded = parseFloat(advance.refundedAmount) || 0;
+    return Math.max(0, amount - refunded - spent);
+}
+
+async function syncAdvanceRemainingAmount(projectId, advanceId) {
+    const advance = await getAdvanceById(advanceId);
+    if (!advance) return;
+    const available = await getAdvanceAvailableAmount(projectId, advanceId);
+    await window.firebaseConfig.db.collection('projects').doc(projectId).collection('advances').doc(advanceId).update({
+        remainingAmount: available,
+        updatedAt: firebase.firestore.Timestamp.now()
+    });
+}
+
+async function syncAllAdvanceRemainingAmounts(projectId) {
+    const snap = await window.firebaseConfig.db.collection('projects').doc(projectId).collection('advances').where('transactionType', '==', 'payment').get();
+    for (const doc of snap.docs) {
+        await syncAdvanceRemainingAmount(projectId, doc.id);
+    }
+}
+
+function toggleFundSourceFields() {
+    const fundSourceEl = document.getElementById('fundSource');
+    const advanceGroup = document.getElementById('advanceRecipientGroup');
+    const advanceSelect = document.getElementById('advanceRecipientSelect');
+    const recipientInput = document.getElementById('recipient');
+    if (!fundSourceEl || !advanceGroup || !advanceSelect || !recipientInput) return;
+    const isAdvance = normalizeFundSource(fundSourceEl.value) === 'advance';
+    advanceGroup.style.display = isAdvance ? 'block' : 'none';
+    advanceSelect.required = isAdvance;
+    recipientInput.readOnly = isAdvance;
+    if (!isAdvance) {
+        advanceSelect.value = '';
+        document.getElementById('advanceRecipientHint').textContent = '';
+    }
+}
+
+function handleAdvanceRecipientChange() {
+    const advanceSelect = document.getElementById('advanceRecipientSelect');
+    const recipientInput = document.getElementById('recipient');
+    const hint = document.getElementById('advanceRecipientHint');
+    if (!advanceSelect || !recipientInput || !hint) return;
+    const selected = recipientsList.find(r => r.id === advanceSelect.value);
+    if (selected) {
+        recipientInput.value = selected.name || '';
+        hint.textContent = `المتبقي الحالي: ${window.firebaseConfig.formatCurrency(selected.remainingAmount || 0)}`;
+    } else {
+        hint.textContent = '';
+    }
+}
+
+function populateAdvanceRecipientSelect() {
+    const select = document.getElementById('advanceRecipientSelect');
+    if (!select) return;
+    select.innerHTML = '<option value="">اختر سلفة المخول</option>';
+    recipientsList.forEach(recipient => {
+        const option = document.createElement('option');
+        option.value = recipient.id;
+        option.textContent = `${recipient.name} - المتبقي ${window.firebaseConfig.formatCurrency(recipient.remainingAmount || 0)}`;
+        select.appendChild(option);
+    });
+}
 
 // =========== خدمة ImgBB المدمجة ===========
 const IMGBB_API_KEY = '1018dd77ec0d31c2ac9727113a9724f1';
@@ -321,6 +417,12 @@ function openAddExpenseModal() {
     document.getElementById('expenseType').value = '';
     document.getElementById('paymentMethod').value = '';
     document.getElementById('recipient').value = '';
+    const fundSourceEl = document.getElementById('fundSource');
+    const advanceSelectEl = document.getElementById('advanceRecipientSelect');
+    if (fundSourceEl) fundSourceEl.value = 'general';
+    if (advanceSelectEl) advanceSelectEl.value = '';
+    toggleFundSourceFields();
+    handleAdvanceRecipientChange();
     document.getElementById('employeeName').value = '';
     document.getElementById('expenseDescription').value = '';
     document.getElementById('expenseNotes').value = '';
@@ -359,6 +461,13 @@ function openEditExpenseModal(expenseId) {
     document.getElementById('expenseType').value = expense.type || '';
     document.getElementById('paymentMethod').value = expense.paymentMethod || '';
     document.getElementById('recipient').value = expense.recipient || '';
+    const fundSourceEl = document.getElementById('fundSource');
+    const advanceSelectEl = document.getElementById('advanceRecipientSelect');
+    if (fundSourceEl) fundSourceEl.value = normalizeFundSource(expense.fundSource);
+    populateAdvanceRecipientSelect();
+    if (advanceSelectEl) advanceSelectEl.value = expense.advanceId || '';
+    toggleFundSourceFields();
+    handleAdvanceRecipientChange();
     document.getElementById('employeeName').value = expense.employeeName || '';
     document.getElementById('expenseDescription').value = expense.description || '';
     document.getElementById('expenseNotes').value = expense.notes || '';
@@ -636,6 +745,7 @@ async function loadRecipientsList() {
             }
         });
         
+        populateAdvanceRecipientSelect();
         console.log(`تم تحميل ${recipientsList.length} مخول من قسم السلف`);
         
     } catch (error) {
@@ -741,85 +851,76 @@ async function updateProjectBalanceDirectly(amount, operation = 'decrease') {
     }
 }
 
+async function loadRecipientsFromAdvances() {
+    await loadRecipientsList();
+    updateRecipientFilterOptions();
+    populateAdvanceRecipientSelect();
+}
+
 // إضافة مصروف
 async function addExpense(expenseData) {
     if (!window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) {
         redirectToProjects();
         return;
     }
-    
+
     const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
-    
+
     try {
         showLoading('جاري إضافة المصروف...');
-        
-        // 🔍 التحقق من الرصيد قبل الإضافة
-        console.log('🔍 === فحص الرصيد قبل الإضافة ===');
-        const balanceBefore = await window.firebaseConfig.calculateTotalBalance();
-        console.log('الرصيد قبل الإضافة:', balanceBefore);
-        console.log('حالة المصروف:', expenseData.paymentStatus);
-        console.log('مبلغ المصروف:', expenseData.amount);
-        
+
         let imageUploadResult = null;
         if (currentImageFile) {
             imageUploadResult = await uploadExpenseImage();
-            
             if (imageUploadResult && imageUploadResult.success) {
                 expenseData.receiptImage = imageUploadResult.imageData;
                 expenseData.hasReceipt = true;
             }
         }
-        
+
+        expenseData.fundSource = normalizeFundSource(expenseData.fundSource);
+        expenseData.advanceId = expenseData.fundSource === 'advance' ? (expenseData.advanceId || null) : null;
+
+        if (expenseData.fundSource === 'advance') {
+            const available = await getAdvanceAvailableAmount(projectId, expenseData.advanceId);
+            if ((parseFloat(expenseData.amount) || 0) > available) {
+                hideLoading();
+                window.firebaseConfig.showMessage('error', 'مبلغ المصروف أكبر من المتبقي في سلفة المخول');
+                return;
+            }
+        }
+
         expenseData.createdAt = firebase.firestore.Timestamp.now();
         expenseData.updatedAt = firebase.firestore.Timestamp.now();
-        
+
         if (expenseData.date) {
             expenseData.date = firebase.firestore.Timestamp.fromDate(new Date(expenseData.date));
         }
-        
-        // ✅ تحديث رصيد المشروع فقط إذا كان المصروف مسدد
-        console.log('Adding expense with paymentStatus:', expenseData.paymentStatus);
-        
-        if (expenseData.paymentStatus === 'paid') {
-            if (window.firebaseConfig.updateProjectBalance) {
-                await window.firebaseConfig.updateProjectBalance(expenseData.amount, 'decrease');
-            } else {
-                await updateProjectBalanceDirectly(expenseData.amount, 'decrease');
-            }
-            console.log('تم خصم الرصيد لأن المصروف مسدد');
-        } else {
-            console.log('لم يتم خصم الرصيد لأن المصروف غير مسدد');
-        }
-        
-        // إضافة المصروف
+
         const expenseRef = await window.firebaseConfig.db.collection('projects').doc(projectId)
             .collection('expenses')
             .add(expenseData);
-        
+
         const expenseId = expenseRef.id;
-        
+
         if (imageUploadResult && imageUploadResult.success) {
             await expenseRef.update({
                 'receiptImage.expenseId': expenseId,
                 'receiptImage.uploadedAt': firebase.firestore.Timestamp.now()
             });
         }
-        
-        // 🔍 التحقق من الرصيد بعد الإضافة
-        console.log('🔍 === فحص الرصيد بعد الإضافة ===');
-        const balanceAfter = await window.firebaseConfig.calculateTotalBalance();
-        console.log('الرصيد بعد الإضافة:', balanceAfter);
-        console.log('الفرق في الرصيد:', balanceAfter - balanceBefore);
-        
-        if (balanceAfter !== balanceBefore && expenseData.paymentStatus === 'unpaid') {
-            console.warn('⚠️ تحذير: الرصيد تغير رغم أن المصروف غير مسدد!');
-            console.warn('قد يكون هناك خطأ في حساب الرصيد في مكان آخر');
+
+        if (expenseData.fundSource === 'advance' && expenseData.advanceId) {
+            await syncAdvanceRemainingAmount(projectId, expenseData.advanceId);
         }
-        
+
+        await window.firebaseConfig.updateTotalBalance();
+        await loadRecipientsFromAdvances();
+
         window.firebaseConfig.showMessage('success', 'تم إضافة المصروف بنجاح');
         closeExpenseModal();
         loadExpenses();
-        
+
     } catch (error) {
         console.error("Error adding expense:", error);
         hideLoading();
@@ -832,33 +933,28 @@ async function updateExpense(expenseId, expenseData) {
     if (!window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) {
         return;
     }
-    
+
     const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
-    
+
     try {
         showLoading('جاري تحديث المصروف...');
-        
+
         const expenseRef = window.firebaseConfig.db.collection('projects').doc(projectId)
             .collection('expenses')
             .doc(expenseId);
-        
+
         const currentExpense = await expenseRef.get();
         const currentData = currentExpense.data();
-        
-        // حساب الفرق في المبلغ للتحديث
-        const oldAmount = parseFloat(currentData.amount) || 0;
-        const newAmount = parseFloat(expenseData.amount) || 0;
-        const amountDifference = newAmount - oldAmount;
-        
+
         let imageUpdateData = null;
-        
+
         if (currentImageFile) {
             if (currentData?.receiptImage?.deleteUrl) {
                 await deleteExpenseImage(currentData.receiptImage);
             }
-            
+
             const uploadResult = await uploadExpenseImage(expenseId);
-            
+
             if (uploadResult && uploadResult.success) {
                 imageUpdateData = uploadResult.imageData;
                 imageUpdateData.expenseId = expenseId;
@@ -872,35 +968,42 @@ async function updateExpense(expenseId, expenseData) {
         } else if (currentData?.receiptImage) {
             imageUpdateData = currentData.receiptImage;
         }
-        
+
         if (imageUpdateData !== undefined) {
             expenseData.receiptImage = imageUpdateData;
             expenseData.hasReceipt = !!imageUpdateData;
         }
-        
+
+        expenseData.fundSource = normalizeFundSource(expenseData.fundSource);
+        expenseData.advanceId = expenseData.fundSource === 'advance' ? (expenseData.advanceId || null) : null;
+
+        if (expenseData.fundSource === 'advance') {
+            const available = await getAdvanceAvailableAmount(projectId, expenseData.advanceId, expenseId);
+            if ((parseFloat(expenseData.amount) || 0) > available) {
+                hideLoading();
+                window.firebaseConfig.showMessage('error', 'مبلغ المصروف أكبر من المتبقي في سلفة المخول');
+                return;
+            }
+        }
+
         expenseData.updatedAt = firebase.firestore.Timestamp.now();
-        
+
         if (expenseData.date) {
             expenseData.date = firebase.firestore.Timestamp.fromDate(new Date(expenseData.date));
         }
-        
-        // تحديث رصيد المشروع إذا تغير المبلغ
-        if (amountDifference !== 0) {
-            if (window.firebaseConfig.updateProjectBalance) {
-                const operation = amountDifference > 0 ? 'decrease' : 'increase';
-                await window.firebaseConfig.updateProjectBalance(Math.abs(amountDifference), operation);
-            } else {
-                await updateProjectBalanceDirectly(Math.abs(amountDifference), 
-                    amountDifference > 0 ? 'decrease' : 'increase');
-            }
-        }
-        
+
         await expenseRef.update(expenseData);
-        
+
+        if (currentData?.advanceId) await syncAdvanceRemainingAmount(projectId, currentData.advanceId);
+        if (expenseData.advanceId) await syncAdvanceRemainingAmount(projectId, expenseData.advanceId);
+
+        await window.firebaseConfig.updateTotalBalance();
+        await loadRecipientsFromAdvances();
+
         window.firebaseConfig.showMessage('success', 'تم تحديث المصروف بنجاح');
         closeExpenseModal();
         loadExpenses();
-        
+
     } catch (error) {
         console.error("Error updating expense:", error);
         hideLoading();
@@ -926,19 +1029,8 @@ async function deleteExpense(expenseId) {
     try {
         showLoading('جاري حذف المصروف...');
         
-        // ✅ إعادة الرصيد عند الحذف فقط إذا كان المصروف مسدد
-const amount = parseFloat(expense.amount) || 0;
-const status = expense.paymentStatus || 'paid';
+        const affectedAdvanceId = expense.advanceId || null;
 
-if (status === 'paid' && amount > 0) {
-    if (window.firebaseConfig.updateProjectBalance) {
-        await window.firebaseConfig.updateProjectBalance(amount, 'increase');
-    } else {
-        await updateProjectBalanceDirectly(amount, 'increase');
-    }
-}
-
-        
         if (expense.receiptImage?.deleteUrl) {
             await deleteExpenseImage(expense.receiptImage);
         }
@@ -947,8 +1039,12 @@ if (status === 'paid' && amount > 0) {
             .collection('expenses')
             .doc(expenseId)
             .delete();
-        
-        window.firebaseConfig.showMessage('success', 'تم حذف المصروف وإعادة الرصيد بنجاح');
+
+        if (affectedAdvanceId) await syncAdvanceRemainingAmount(projectId, affectedAdvanceId);
+        await window.firebaseConfig.updateTotalBalance();
+        await loadRecipientsFromAdvances();
+
+        window.firebaseConfig.showMessage('success', 'تم حذف المصروف بنجاح');
         loadExpenses();
         
     } catch (error) {
@@ -1241,7 +1337,11 @@ async function handleExpenseSubmit(e) {
         employeeName: document.getElementById('employeeName').value.trim(),
         description: document.getElementById('expenseDescription').value.trim(),
         notes: document.getElementById('expenseNotes').value.trim(),
-        paymentStatus: paymentStatus // استخدم القيمة المحسوبة
+        paymentStatus: paymentStatus, // استخدم القيمة المحسوبة
+        fundSource: normalizeFundSource(document.getElementById('fundSource')?.value),
+        advanceId: normalizeFundSource(document.getElementById('fundSource')?.value) === 'advance'
+            ? (document.getElementById('advanceRecipientSelect')?.value || null)
+            : null
     };
     
     // إضافة console.log للتشخيص
@@ -1343,19 +1443,28 @@ async function markExpenseAsPaid(expenseId) {
             return;
         }
 
-        // 1) خصم الرصيد الآن
-        if (window.firebaseConfig.updateProjectBalance) {
-            await window.firebaseConfig.updateProjectBalance(amount, 'decrease');
-        } else {
-            await updateProjectBalanceDirectly(amount, 'decrease');
+        if ((expense.fundSource || 'general') === 'advance' && expense.advanceId) {
+            const available = await getAdvanceAvailableAmount(projectId, expense.advanceId, expenseId);
+            if (amount > available) {
+                hideLoading();
+                window.firebaseConfig.showMessage('error', 'لا يمكن التسديد لأن المبلغ يتجاوز المتبقي من السلفة');
+                return;
+            }
         }
 
-        // 2) تحديث الحالة إلى مسدد
+        // 1) تحديث الحالة إلى مسدد
         await expenseRef.update({
             paymentStatus: 'paid',
             paidAt: firebase.firestore.Timestamp.now(),
             updatedAt: firebase.firestore.Timestamp.now()
         });
+
+        if ((expense.fundSource || 'general') === 'advance' && expense.advanceId) {
+            await syncAdvanceRemainingAmount(projectId, expense.advanceId);
+        }
+
+        await window.firebaseConfig.updateTotalBalance();
+        await loadRecipientsFromAdvances();
 
         hideLoading();
         window.firebaseConfig.showMessage('success', 'تم تسديد المصروف وتحديث الرصيد');
@@ -1391,6 +1500,7 @@ function displayExpenses(list) {
     
     list.forEach((expense, index) => {
         const isRecipient = recipientsList.some(rec => rec.name === expense.recipient);
+    const fundSourceLabel = getFundSourceLabel(expense.fundSource);
         
         // إنشاء خلية الصورة
         let imageCell = '<span class="no-receipt">-</span>';
@@ -1517,6 +1627,9 @@ function exportFilteredExpensesToExcel() {
         // حالة التسديد
         if (filterInfo.paymentStatus) {
             data.push([`- حالة التسديد: ${filterInfo.paymentStatus === 'paid' ? 'مسدد' : 'غير مسدد'}`]);
+        }
+        if (filterInfo.fundSource) {
+            data.push([`- مصدر الصرف: ${filterInfo.fundSource === 'advance' ? 'من سلفة مخول' : 'من الرصيد العام'}`]);
         }
         data.push(['']); // سطر فارغ
         
@@ -1919,7 +2032,7 @@ function getRecipientExpensesForCurrentReport() {
     
     // تصفية المصاريف الأصلية بناءً على التصفية الحالية
     return expenses.filter(expense => {
-        const matchesRecipient = expense.recipient === recipientName;
+        const matchesRecipient = expense.recipient === recipientName && normalizeFundSource(expense.fundSource) === 'advance';
         
         let matchesMonth = true;
         if (month && expense.date) {
@@ -1966,7 +2079,8 @@ function getCurrentFilterInfo() {
         type: document.getElementById('typeFilter').value,
         recipient: document.getElementById('employeeFilter').value,
         month: document.getElementById('monthFilter').value,
-        paymentStatus: document.getElementById('paymentStatusFilter').value 
+        paymentStatus: document.getElementById('paymentStatusFilter').value,
+        fundSource: document.getElementById('fundSourceFilter') ? document.getElementById('fundSourceFilter').value : ''
     };
 }
 
@@ -2012,6 +2126,9 @@ function getFilterFileNamePart(filterInfo) {
     // ⭐ أضف هذا: حالة التسديد
     if (filterInfo.paymentStatus) {
         parts.push(filterInfo.paymentStatus === 'paid' ? 'مسدد' : 'غير_مسدد');
+    }
+    if (filterInfo.fundSource) {
+        parts.push(filterInfo.fundSource === 'advance' ? 'من_سلفة' : 'من_الرصيد_العام');
     }
     
     if (parts.length === 0) {
@@ -2140,25 +2257,25 @@ function setupSearchAndFilter() {
     const typeFilter = document.getElementById('typeFilter');
     const recipientFilter = document.getElementById('employeeFilter');
     const monthFilter = document.getElementById('monthFilter');
-    const paymentStatusFilter = document.getElementById('paymentStatusFilter'); // أضف هذا
+    const paymentStatusFilter = document.getElementById('paymentStatusFilter');
+    const fundSourceFilter = document.getElementById('fundSourceFilter');
 
     function filterExpenses() {
-        const searchTerm = searchInput.value.toLowerCase();
-        const type = typeFilter.value;
-        const recipient = recipientFilter.value;
-        const month = monthFilter.value;
-        const paymentStatus = paymentStatusFilter.value; // أضف هذا
+        const searchTerm = (searchInput?.value || '').toLowerCase().trim();
+        const type = typeFilter?.value || '';
+        const recipient = recipientFilter?.value || '';
+        const month = monthFilter?.value || '';
+        const paymentStatus = paymentStatusFilter?.value || '';
+        const fundSource = fundSourceFilter?.value || '';
 
         const filtered = expenses.filter(expense => {
             const matchesSearch = !searchTerm || 
                 (expense.description && expense.description.toLowerCase().includes(searchTerm)) ||
                 (expense.expenseNumber && expense.expenseNumber.toLowerCase().includes(searchTerm)) ||
                 (expense.recipient && expense.recipient.toLowerCase().includes(searchTerm));
-            
             const matchesType = !type || expense.type === type;
-            
             const matchesRecipient = !recipient || expense.recipient === recipient;
-            
+
             let matchesMonth = true;
             if (month && expense.date) {
                 const expenseDate = expense.date.toDate ? expense.date.toDate() : new Date(expense.date);
@@ -2166,21 +2283,29 @@ function setupSearchAndFilter() {
                 matchesMonth = expenseYearMonth === month;
             }
 
-            // ⭐ أضف هذا: فلتر حالة التسديد
-            const matchesPaymentStatus = !paymentStatus || 
-                (expense.paymentStatus || 'paid') === paymentStatus;
+            const matchesPaymentStatus = !paymentStatus || (expense.paymentStatus || 'paid') === paymentStatus;
+            const matchesFundSource = !fundSource || normalizeFundSource(expense.fundSource) === fundSource;
 
-            return matchesSearch && matchesType && matchesRecipient && matchesMonth && matchesPaymentStatus;
+            return matchesSearch && matchesType && matchesRecipient && matchesMonth && matchesPaymentStatus && matchesFundSource;
         });
 
+        filtered.sort((a, b) => {
+            const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date || 0);
+            const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date || 0);
+            return dateB - dateA;
+        });
+
+        filteredExpenses = filtered;
         displayExpenses(filtered);
+        updateExpenseSummary();
     }
 
-    if (searchInput) searchInput.addEventListener('input', filterExpenses);
-    if (typeFilter) typeFilter.addEventListener('change', filterExpenses);
-    if (recipientFilter) recipientFilter.addEventListener('change', filterExpenses);
-    if (monthFilter) monthFilter.addEventListener('change', filterExpenses);
-    if (paymentStatusFilter) paymentStatusFilter.addEventListener('change', filterExpenses); // أضف هذا
+    searchInput?.addEventListener('input', filterExpenses);
+    typeFilter?.addEventListener('change', filterExpenses);
+    recipientFilter?.addEventListener('change', filterExpenses);
+    monthFilter?.addEventListener('change', filterExpenses);
+    paymentStatusFilter?.addEventListener('change', filterExpenses);
+    fundSourceFilter?.addEventListener('change', filterExpenses);
 }
 
 // =========== تهيئة الصفحة ===========
@@ -2245,6 +2370,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (expenseForm) {
             expenseForm.addEventListener('submit', handleExpenseSubmit);
         }
+
+        const fundSourceEl = document.getElementById('fundSource');
+        const advanceRecipientSelect = document.getElementById('advanceRecipientSelect');
+        if (fundSourceEl) fundSourceEl.addEventListener('change', toggleFundSourceFields);
+        if (advanceRecipientSelect) advanceRecipientSelect.addEventListener('change', handleAdvanceRecipientChange);
+        toggleFundSourceFields();
         
         // زر توليد التقرير
         const generateReportBtn = document.getElementById('generateReportBtn');

@@ -27,6 +27,228 @@ function waitForFirebaseConfig(maxAttempts = 30, interval = 100) {
     });
 }
 
+// =========== دوال السلفة والاسترداد ===========
+
+async function calculateAdvanceSpent(projectId, advanceId) {
+    if (!advanceId) return 0;
+    try {
+        const expensesSnapshot = await window.firebaseConfig.db.collection('projects').doc(projectId)
+            .collection('expenses')
+            .where('advanceId', '==', advanceId)
+            .get();
+
+        let totalSpent = 0;
+        expensesSnapshot.forEach(doc => {
+            const expense = doc.data() || {};
+            const status = expense.paymentStatus || 'paid';
+            const source = expense.fundSource || expense.paymentSource || '';
+            const isAdvanceExpense = expense.advanceId === advanceId || source === 'advance' || source === 'recipient_advance';
+            if (isAdvanceExpense && status === 'paid') {
+                totalSpent += parseFloat(expense.amount) || 0;
+            }
+        });
+
+        return totalSpent;
+    } catch (error) {
+        console.error('❌ خطأ في حساب المصروف من السلفة:', error);
+        return 0;
+    }
+}
+
+async function calculateAdvanceFinancials(projectId, advance) {
+    const amount = parseFloat(advance.amount) || 0;
+    const refunded = parseFloat(advance.refundedAmount) || 0;
+    const spent = await calculateAdvanceSpent(projectId, advance.id);
+    const remaining = Math.max(0, amount - spent - refunded);
+
+    let refundStatus = 'غير مسدد';
+    if (refunded > 0 && remaining > 0) {
+        refundStatus = 'مسدد جزئياً';
+    } else if (remaining <= 0) {
+        refundStatus = 'مسدد بالكامل';
+    }
+
+    return { amount, refunded, spent, remaining, refundStatus };
+}
+
+async function syncAdvanceFinancials(projectId, advance) {
+    if (!advance || advance.transactionType !== 'payment' || !advance.id) {
+        return advance;
+    }
+
+    const financials = await calculateAdvanceFinancials(projectId, advance);
+    const updates = {
+        spentAmount: financials.spent,
+        remainingAmount: financials.remaining,
+        refundStatus: financials.refundStatus,
+        updatedAt: firebase.firestore.Timestamp.now()
+    };
+
+    const currentSpent = parseFloat(advance.spentAmount) || 0;
+    const currentRemaining = parseFloat(advance.remainingAmount);
+    const currentRefundStatus = advance.refundStatus || 'غير مسدد';
+
+    if (Math.abs(currentSpent - financials.spent) > 0.001 || Number.isNaN(currentRemaining) || Math.abs(currentRemaining - financials.remaining) > 0.001 || currentRefundStatus !== financials.refundStatus) {
+        try {
+            await window.firebaseConfig.db.collection('projects').doc(projectId)
+                .collection('advances').doc(advance.id).update(updates);
+        } catch (error) {
+            console.error('❌ خطأ في مزامنة بيانات السلفة:', error);
+        }
+    }
+
+    return { ...advance, ...updates };
+}
+
+async function refreshAdvancesFinancials(projectId, advancesList) {
+    const result = [];
+    for (const advance of advancesList) {
+        if (advance.transactionType === 'payment') {
+            result.push(await syncAdvanceFinancials(projectId, advance));
+        } else {
+            result.push(advance);
+        }
+    }
+    return result;
+}
+
+function closeRefundAdvanceModal() {
+    const modal = document.getElementById('refundAdvanceModal');
+    if (modal) modal.style.display = 'none';
+    selectedAdvanceForRefund = null;
+}
+
+function renderRefundHistory(advance) {
+    const tbody = document.getElementById('refundsHistoryBody');
+    if (!tbody) return;
+
+    const refunds = Array.isArray(advance.refunds) ? advance.refunds : [];
+    tbody.innerHTML = '';
+
+    if (!refunds.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:16px;color:#777;">لا توجد استردادات مسجلة بعد</td></tr>';
+        return;
+    }
+
+    refunds.forEach((refund, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${index + 1}</td>
+            <td>${refund.date ? formatDate(refund.date) : ''}</td>
+            <td>${window.firebaseConfig.formatCurrency(refund.amount || 0)}</td>
+            <td>${refund.method || '-'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+async function openRefundAdvanceModal(advanceId) {
+    if (!window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) return;
+    const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
+    const advance = advances.find(a => a.id === advanceId && a.transactionType === 'payment');
+    if (!advance) {
+        window.firebaseConfig.showMessage('error', 'تعذر العثور على السلفة المطلوبة');
+        return;
+    }
+
+    const syncedAdvance = await syncAdvanceFinancials(projectId, advance);
+    selectedAdvanceForRefund = syncedAdvance;
+
+    const { amount, refunded, spent, remaining } = await calculateAdvanceFinancials(projectId, syncedAdvance);
+
+    document.getElementById('refundAdvanceNumber').textContent = syncedAdvance.transactionNumber || '-';
+    document.getElementById('refundRecipientName').textContent = syncedAdvance.recipientName || '-';
+    document.getElementById('refundOriginalAmount').textContent = window.firebaseConfig.formatCurrency(amount);
+    document.getElementById('refundRefundedAmount').textContent = window.firebaseConfig.formatCurrency(refunded);
+    document.getElementById('refundRemainingAmount').textContent = window.firebaseConfig.formatCurrency(remaining);
+
+    const refundDateEl = document.getElementById('refundDate');
+    const refundAmountEl = document.getElementById('refundAmount');
+    const refundMethodEl = document.getElementById('refundMethod');
+    const refundDescriptionEl = document.getElementById('refundDescription');
+
+    if (refundDateEl) refundDateEl.value = new Date().toISOString().split('T')[0];
+    if (refundAmountEl) {
+        refundAmountEl.value = remaining > 0 ? String(remaining) : '';
+        refundAmountEl.max = String(remaining);
+    }
+    if (refundMethodEl) refundMethodEl.value = 'نقدي';
+    if (refundDescriptionEl) refundDescriptionEl.value = remaining > 0 ? 'استرداد باقي السلفة' : '';
+
+    const spentEl = document.getElementById('refundSpentAmount');
+    if (spentEl) spentEl.textContent = window.firebaseConfig.formatCurrency(spent);
+
+    renderRefundHistory(syncedAdvance);
+
+    document.getElementById('refundAdvanceModal').style.display = 'flex';
+}
+
+async function handleRefundAdvanceSubmit(event) {
+    event.preventDefault();
+
+    if (!selectedAdvanceForRefund) {
+        window.firebaseConfig.showMessage('error', 'لا توجد سلفة محددة للاسترداد');
+        return;
+    }
+
+    if (!window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) return;
+    const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
+
+    const refundAmount = parseFloat(document.getElementById('refundAmount')?.value) || 0;
+    const refundDate = document.getElementById('refundDate')?.value;
+    const refundMethod = document.getElementById('refundMethod')?.value || '';
+    const refundDescription = document.getElementById('refundDescription')?.value || '';
+
+    const financials = await calculateAdvanceFinancials(projectId, selectedAdvanceForRefund);
+
+    if (refundAmount <= 0) {
+        window.firebaseConfig.showMessage('error', 'مبلغ الاسترداد يجب أن يكون أكبر من صفر');
+        return;
+    }
+
+    if (refundAmount > financials.remaining) {
+        window.firebaseConfig.showMessage('error', 'مبلغ الاسترداد أكبر من المتبقي على السلفة');
+        return;
+    }
+
+    try {
+        showLoading('جاري تسجيل الاسترداد وإضافة المبلغ للرصيد العام...');
+
+        const existingRefunds = Array.isArray(selectedAdvanceForRefund.refunds) ? [...selectedAdvanceForRefund.refunds] : [];
+        existingRefunds.push({
+            amount: refundAmount,
+            method: refundMethod,
+            description: refundDescription,
+            date: refundDate ? firebase.firestore.Timestamp.fromDate(new Date(refundDate)) : firebase.firestore.Timestamp.now(),
+            createdAt: firebase.firestore.Timestamp.now()
+        });
+
+        const newRefundedAmount = (parseFloat(selectedAdvanceForRefund.refundedAmount) || 0) + refundAmount;
+        const newRemaining = Math.max(0, financials.amount - financials.spent - newRefundedAmount);
+        const newRefundStatus = newRemaining <= 0 ? 'مسدد بالكامل' : 'مسدد جزئياً';
+
+        await window.firebaseConfig.db.collection('projects').doc(projectId)
+            .collection('advances').doc(selectedAdvanceForRefund.id).update({
+                refundedAmount: newRefundedAmount,
+                remainingAmount: newRemaining,
+                refundStatus: newRefundStatus,
+                refunds: existingRefunds,
+                updatedAt: firebase.firestore.Timestamp.now(),
+                closedAt: newRemaining <= 0 ? firebase.firestore.Timestamp.now() : null
+            });
+
+        await recalculateProjectBalance();
+
+        window.firebaseConfig.showMessage('success', 'تم تسجيل استرداد السلفة وإضافة المبلغ للرصيد العام');
+        closeRefundAdvanceModal();
+        await loadAdvances();
+    } catch (error) {
+        console.error('❌ خطأ في تسجيل الاسترداد:', error);
+        hideLoading();
+        window.firebaseConfig.showMessage('error', 'تعذر تسجيل الاسترداد');
+    }
+}
+
 // =========== دالة إعادة حساب الرصيد (المركزية) ===========
 
 async function recalculateProjectBalance() {
@@ -89,17 +311,22 @@ async function recalculateProjectBalance() {
             console.error('❌ خطأ في حساب السلف المدفوعة:', error);
         }
         
-        // حساب المصاريف
+        // حساب المصاريف العامة فقط (استبعاد المصاريف المصروفة من سلف المخولين)
         try {
             const expensesSnapshot = await db.collection('projects').doc(projectId)
                 .collection('expenses')
                 .get();
             
             expensesSnapshot.forEach(doc => {
-                const expense = doc.data();
-                totalExpenses += parseFloat(expense.amount) || 0;
+                const expense = doc.data() || {};
+                const status = expense.paymentStatus || 'paid';
+                const fundSource = expense.fundSource || expense.paymentSource || 'general';
+                const isAdvanceExpense = !!expense.advanceId || fundSource === 'advance' || fundSource === 'recipient_advance';
+                if (status === 'paid' && !isAdvanceExpense) {
+                    totalExpenses += parseFloat(expense.amount) || 0;
+                }
             });
-            console.log(`✅ المصاريف: ${totalExpenses}`);
+            console.log(`✅ المصاريف العامة فقط: ${totalExpenses}`);
         } catch (error) {
             console.error('❌ خطأ في حساب المصاريف:', error);
         }
@@ -293,7 +520,8 @@ async function loadAdvances() {
                 ...data
             });
         });
-        
+
+        advances = await refreshAdvancesFinancials(projectId, advances);
         console.log(`✅ تم تحميل ${advances.length} معاملة`);
         
         // 6. عرض البيانات
@@ -426,6 +654,9 @@ function displayAdvances(list) {
             <td>${statusBadge}</td>
             <td>${advance.notes || ''}</td>
             <td>
+                ${isPayment ? `<button class="btn btn-warning btn-sm" onclick="openRefundAdvanceModal('${advance.id}')" ${remaining <= 0 ? 'disabled' : ''}>
+                    <i class="fas fa-undo"></i> استرداد
+                </button>` : ''}
                 <button class="btn btn-danger btn-sm" onclick="deleteAdvance('${advance.id}')">
                     <i class="fas fa-trash"></i> حذف
                 </button>
@@ -857,6 +1088,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         document.getElementById('receivePaymentForm').addEventListener('submit', handleReceivePaymentSubmit);
         document.getElementById('payAdvanceForm').addEventListener('submit', handlePayAdvanceSubmit);
+        const refundForm = document.getElementById('refundAdvanceForm');
+        if (refundForm) refundForm.addEventListener('submit', handleRefundAdvanceSubmit);
+        const closeRefundModalBtn = document.getElementById('closeRefundModal');
+        if (closeRefundModalBtn) closeRefundModalBtn.addEventListener('click', closeRefundAdvanceModal);
+        const cancelRefundBtn = document.getElementById('cancelRefundBtn');
+        if (cancelRefundBtn) cancelRefundBtn.addEventListener('click', closeRefundAdvanceModal);
         
         console.log('✅ تم تحميل صفحة السلف بنجاح');
         
@@ -1004,5 +1241,7 @@ setTimeout(async () => {
 window.recalculateProjectBalance = recalculateProjectBalance;
 window.loadAdvances = loadAdvances;
 window.updateBalanceDisplayImmediately = updateBalanceDisplayImmediately;
+window.openRefundAdvanceModal = openRefundAdvanceModal;
+window.closeRefundAdvanceModal = closeRefundAdvanceModal;
 
 console.log('✅ advances.js محمل وجاهز!');

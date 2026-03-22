@@ -143,7 +143,11 @@ async function calculateBalanceOnce() {
             
             expensesSnapshot.forEach(doc => {
                 const expense = doc.data();
-                totalExpenses += parseFloat(expense.amount) || 0;
+                const status = expense.paymentStatus || 'paid';
+                const fundSource = expense.fundSource || 'general';
+                if (status === 'paid' && fundSource === 'general') {
+                    totalExpenses += parseFloat(expense.amount) || 0;
+                }
             });
         } catch (error) {
             console.warn("خطأ في حساب المصاريف:", error);
