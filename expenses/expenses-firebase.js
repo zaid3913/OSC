@@ -98,7 +98,13 @@ function populateAdvanceRecipientSelect() {
     recipientsList.forEach(recipient => {
         const option = document.createElement('option');
         option.value = recipient.id;
-        option.textContent = `${recipient.name} - المتبقي ${window.firebaseConfig.formatCurrency(recipient.remainingAmount || 0)}`;
+
+        const details = [];
+        if (recipient.transactionNumber) details.push(recipient.transactionNumber);
+        if (recipient.formattedDate) details.push(recipient.formattedDate);
+
+        const detailsText = details.length ? ` (${details.join(' - ')})` : '';
+        option.textContent = `${recipient.name}${detailsText} - المتبقي ${window.firebaseConfig.formatCurrency(recipient.remainingAmount || 0)}`;
         select.appendChild(option);
     });
 }
@@ -713,7 +719,7 @@ function generateInvoiceNumber() {
 
 // =========== دوال إدارة المصاريف والمخولين ===========
 
-// تحميل قائمة المخولين من قسم السلف
+// تحميل قائمة السلف من قسم السلف
 async function loadRecipientsList() {
     if (!window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) {
         return;
@@ -728,25 +734,35 @@ async function loadRecipientsList() {
             .orderBy('recipientName')
             .get();
         
-        const recipientsSet = new Set();
         recipientsList = [];
         
         snapshot.forEach(doc => {
-            const advance = doc.data();
-            if (advance.recipientName && !recipientsSet.has(advance.recipientName)) {
-                recipientsSet.add(advance.recipientName);
-                recipientsList.push({
-                    id: doc.id,
-                    name: advance.recipientName,
-                    type: advance.type || 'غير محدد',
-                    totalAdvances: parseFloat(advance.amount) || 0,
-                    remainingAmount: parseFloat(advance.remainingAmount) || parseFloat(advance.amount) || 0
-                });
-            }
+            const advance = doc.data() || {};
+            if (!advance.recipientName) return;
+
+            const amount = parseFloat(advance.amount) || 0;
+            const remainingAmount = parseFloat(advance.remainingAmount);
+            const safeRemaining = Number.isNaN(remainingAmount) ? amount : remainingAmount;
+            const advanceDate = advance.date?.toDate ? advance.date.toDate() : (advance.date ? new Date(advance.date) : null);
+            const formattedDate = advanceDate && !Number.isNaN(advanceDate.getTime())
+                ? advanceDate.toLocaleDateString('ar-IQ')
+                : '';
+
+            recipientsList.push({
+                id: doc.id,
+                name: advance.recipientName,
+                type: advance.type || 'غير محدد',
+                transactionNumber: advance.transactionNumber || '',
+                originalAmount: amount,
+                totalAdvances: amount,
+                remainingAmount: safeRemaining,
+                date: advance.date || null,
+                formattedDate
+            });
         });
         
         populateAdvanceRecipientSelect();
-        console.log(`تم تحميل ${recipientsList.length} مخول من قسم السلف`);
+        console.log(`تم تحميل ${recipientsList.length} سلفة من قسم السلف`);
         
     } catch (error) {
         console.error("Error loading recipients:", error);
