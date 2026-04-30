@@ -369,6 +369,59 @@
             </div>
         </div>
         
+
+        <!-- نموذج تسديد دين المخول من الرصيد العام -->
+        <div class="modal" id="debtPaymentModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>تسديد دين المخول</h3>
+                    <button class="close-btn" id="closeDebtPaymentModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="refund-header">
+                        <p>المخول: <strong id="debtPaymentRecipientName"></strong></p>
+                        <p>إجمالي المستحق للمخول: <strong id="debtPaymentTotalDebt"></strong></p>
+                        <small style="color:#777;">هذا التسديد ينخصم من الرصيد العام مباشرة.</small>
+                    </div>
+
+                    <form id="debtPaymentForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="debtPaymentDate">تاريخ التسديد *</label>
+                                <input type="date" id="debtPaymentDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="debtPaymentAmount">مبلغ التسديد (دينار عراقي) *</label>
+                                <input type="number" id="debtPaymentAmount" min="0" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="debtPaymentMethod">طريقة التسديد *</label>
+                                <select id="debtPaymentMethod" required>
+                                    <option value="">اختر طريقة التسديد</option>
+                                    <option value="نقدي">نقدي</option>
+                                    <option value="تحويل بنكي">تحويل بنكي</option>
+                                    <option value="شيك">شيك</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="debtPaymentDescription">الوصف</label>
+                                <input type="text" id="debtPaymentDescription" placeholder="وصف التسديد...">
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelDebtPaymentBtn">إلغاء</button>
+                            <button type="submit" class="btn btn-success">تسديد الدين</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <!-- نموذج عرض تفاصيل السلفة -->
         <div class="modal" id="advanceDetailsModal">
             <div class="modal-content wide-modal">

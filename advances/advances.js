@@ -2,6 +2,7 @@
 let advances = [];
 let currentAdvanceId = null;
 let selectedAdvanceForRefund = null;
+let selectedAdvanceForDebtPayment = null;
 let filteredAdvances = [];
 
 // =========== دوال المساعدة ===========
@@ -56,19 +57,25 @@ async function calculateAdvanceSpent(projectId, advanceId) {
 }
 
 async function calculateAdvanceFinancials(projectId, advance) {
-    const amount = parseFloat(advance.amount) || 0;
+    const amount = parseFloat(advance.amount) || 0; // المبلغ الكامل المدفوع من الرصيد العام
+    const autoDebtPaid = parseFloat(advance.autoDebtPaid) || 0; // دين قديم تم تسديده من هذه السلفة
+    const spendableAmount = Math.max(0, amount - autoDebtPaid); // المتاح فعلياً للمصاريف الجديدة
     const refunded = parseFloat(advance.refundedAmount) || 0;
     const spent = await calculateAdvanceSpent(projectId, advance.id);
-    const remaining = Math.max(0, amount - spent - refunded);
+    const rawRemaining = spendableAmount - spent - refunded;
+    const remaining = Math.max(0, rawRemaining);
+    const overSpentAmount = Math.max(0, -rawRemaining); // مستحق للمخول لأنه صرف من ماله الخاص
 
     let refundStatus = 'غير مسدد';
-    if (refunded > 0 && remaining > 0) {
+    if (overSpentAmount > 0) {
+        refundStatus = 'مستحق للمخول';
+    } else if (refunded > 0 && remaining > 0) {
         refundStatus = 'مسدد جزئياً';
     } else if (remaining <= 0) {
         refundStatus = 'مسدد بالكامل';
     }
 
-    return { amount, refunded, spent, remaining, refundStatus };
+    return { amount, autoDebtPaid, spendableAmount, refunded, spent, remaining, overSpentAmount, refundStatus };
 }
 
 async function syncAdvanceFinancials(projectId, advance) {
@@ -79,16 +86,20 @@ async function syncAdvanceFinancials(projectId, advance) {
     const financials = await calculateAdvanceFinancials(projectId, advance);
     const updates = {
         spentAmount: financials.spent,
+        spendableAmount: financials.spendableAmount,
         remainingAmount: financials.remaining,
+        overSpentAmount: financials.overSpentAmount,
         refundStatus: financials.refundStatus,
         updatedAt: firebase.firestore.Timestamp.now()
     };
 
     const currentSpent = parseFloat(advance.spentAmount) || 0;
+    const currentSpendable = parseFloat(advance.spendableAmount);
     const currentRemaining = parseFloat(advance.remainingAmount);
+    const currentOverSpent = parseFloat(advance.overSpentAmount) || 0;
     const currentRefundStatus = advance.refundStatus || 'غير مسدد';
 
-    if (Math.abs(currentSpent - financials.spent) > 0.001 || Number.isNaN(currentRemaining) || Math.abs(currentRemaining - financials.remaining) > 0.001 || currentRefundStatus !== financials.refundStatus) {
+    if (Math.abs(currentSpent - financials.spent) > 0.001 || Number.isNaN(currentSpendable) || Math.abs(currentSpendable - financials.spendableAmount) > 0.001 || Number.isNaN(currentRemaining) || Math.abs(currentRemaining - financials.remaining) > 0.001 || Math.abs(currentOverSpent - financials.overSpentAmount) > 0.001 || currentRefundStatus !== financials.refundStatus) {
         try {
             await window.firebaseConfig.db.collection('projects').doc(projectId)
                 .collection('advances').doc(advance.id).update(updates);
@@ -110,6 +121,121 @@ async function refreshAdvancesFinancials(projectId, advancesList) {
         }
     }
     return result;
+}
+
+function normalizeRecipientName(name) {
+    return (name || '').trim().replace(/\s+/g, ' ');
+}
+
+async function calculateRecipientDebt(projectId, recipientName) {
+    const targetName = normalizeRecipientName(recipientName);
+    if (!targetName) return 0;
+
+    let totalOverSpent = 0;
+    let totalDebtPaid = 0;
+    const snap = await window.firebaseConfig.db.collection('projects').doc(projectId).collection('advances').get();
+
+    snap.forEach(doc => {
+        const item = doc.data() || {};
+        const itemName = normalizeRecipientName(item.recipientName || item.name);
+        if (itemName !== targetName) return;
+
+        if (item.transactionType === 'payment') {
+            totalOverSpent += parseFloat(item.overSpentAmount) || 0;
+            totalDebtPaid += parseFloat(item.autoDebtPaid) || 0;
+        }
+
+        if (item.transactionType === 'debt_payment') {
+            totalDebtPaid += parseFloat(item.amount) || 0;
+        }
+    });
+
+    return Math.max(0, totalOverSpent - totalDebtPaid);
+}
+
+function closeDebtPaymentModal() {
+    const modal = document.getElementById('debtPaymentModal');
+    if (modal) modal.style.display = 'none';
+    selectedAdvanceForDebtPayment = null;
+}
+
+async function openDebtPaymentModal(advanceId) {
+    if (!window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) return;
+    const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
+    const advance = advances.find(a => a.id === advanceId && a.transactionType === 'payment');
+    if (!advance) return;
+
+    const syncedAdvance = await syncAdvanceFinancials(projectId, advance);
+    const debt = await calculateRecipientDebt(projectId, syncedAdvance.recipientName);
+    if (debt <= 0) {
+        window.firebaseConfig.showMessage('info', 'لا توجد مستحقات على هذا المخول');
+        await loadAdvances();
+        return;
+    }
+
+    selectedAdvanceForDebtPayment = syncedAdvance;
+    document.getElementById('debtPaymentRecipientName').textContent = syncedAdvance.recipientName || '-';
+    document.getElementById('debtPaymentTotalDebt').textContent = window.firebaseConfig.formatCurrency(debt);
+
+    const dateEl = document.getElementById('debtPaymentDate');
+    const amountEl = document.getElementById('debtPaymentAmount');
+    const methodEl = document.getElementById('debtPaymentMethod');
+    const descEl = document.getElementById('debtPaymentDescription');
+
+    if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+    if (amountEl) { amountEl.value = String(debt); amountEl.max = String(debt); }
+    if (methodEl) methodEl.value = 'نقدي';
+    if (descEl) descEl.value = 'تسديد مستحقات المخول من الرصيد العام';
+
+    document.getElementById('debtPaymentModal').style.display = 'flex';
+}
+
+async function handleDebtPaymentSubmit(event) {
+    event.preventDefault();
+    if (!selectedAdvanceForDebtPayment || !window.firebaseConfig || !window.firebaseConfig.projectManager.hasCurrentProject()) return;
+
+    const projectId = window.firebaseConfig.projectManager.getCurrentProject().id;
+    const debt = await calculateRecipientDebt(projectId, selectedAdvanceForDebtPayment.recipientName);
+    const amount = parseFloat(document.getElementById('debtPaymentAmount')?.value) || 0;
+    const date = document.getElementById('debtPaymentDate')?.value;
+    const method = document.getElementById('debtPaymentMethod')?.value || '';
+    const description = document.getElementById('debtPaymentDescription')?.value || '';
+
+    if (amount <= 0) {
+        window.firebaseConfig.showMessage('error', 'مبلغ التسديد يجب أن يكون أكبر من صفر');
+        return;
+    }
+    if (amount > debt) {
+        window.firebaseConfig.showMessage('error', 'مبلغ التسديد أكبر من الدين المستحق للمخول');
+        return;
+    }
+
+    try {
+        showLoading('جاري تسديد دين المخول من الرصيد العام...');
+        await window.firebaseConfig.db.collection('projects').doc(projectId).collection('advances').add({
+            transactionNumber: generateTransactionNumber('DEBT'),
+            type: 'تسديد دين مخول',
+            transactionType: 'debt_payment',
+            status: 'مسدد',
+            recipientName: selectedAdvanceForDebtPayment.recipientName || '',
+            amount,
+            paymentMethod: method,
+            description,
+            date: date ? firebase.firestore.Timestamp.fromDate(new Date(date)) : firebase.firestore.Timestamp.now(),
+            relatedAdvanceId: selectedAdvanceForDebtPayment.id,
+            createdAt: firebase.firestore.Timestamp.now(),
+            updatedAt: firebase.firestore.Timestamp.now()
+        });
+
+        await recalculateProjectBalance();
+        window.firebaseConfig.showMessage('success', 'تم تسديد دين المخول من الرصيد العام');
+        closeDebtPaymentModal();
+        await loadAdvances();
+    } catch (error) {
+        console.error('❌ خطأ في تسديد دين المخول:', error);
+        hideLoading();
+        window.firebaseConfig.showMessage('error', 'تعذر تسديد دين المخول');
+    }
 }
 
 function closeRefundAdvanceModal() {
@@ -276,6 +402,7 @@ async function recalculateProjectBalance() {
         let totalAdvances = 0;      // السلف المدفوعة (-)
         let totalExpenses = 0;      // المصاريف (-)
         let totalContractorPayments = 0; // دفعات المقاولين (-)
+        let totalDebtPayments = 0; // تسديد ديون المخولين (-)
         
         // حساب الدفعات المستلمة
         try {
@@ -311,6 +438,22 @@ async function recalculateProjectBalance() {
             console.error('❌ خطأ في حساب السلف المدفوعة:', error);
         }
         
+        // حساب تسديد ديون المخولين من الرصيد العام
+        try {
+            const debtPaymentsSnapshot = await db.collection('projects').doc(projectId)
+                .collection('advances')
+                .where('transactionType', '==', 'debt_payment')
+                .get();
+
+            debtPaymentsSnapshot.forEach(doc => {
+                const payment = doc.data() || {};
+                totalDebtPayments += parseFloat(payment.amount) || 0;
+            });
+            console.log(`✅ تسديد ديون المخولين: ${totalDebtPayments}`);
+        } catch (error) {
+            console.error('❌ خطأ في حساب تسديد ديون المخولين:', error);
+        }
+
         // حساب المصاريف العامة فقط (استبعاد المصاريف المصروفة من سلف المخولين)
         try {
             const expensesSnapshot = await db.collection('projects').doc(projectId)
@@ -357,7 +500,7 @@ async function recalculateProjectBalance() {
         }
         
         // حساب الرصيد النهائي
-        const calculatedBalance = totalReceived - totalAdvances - totalExpenses - totalContractorPayments;
+        const calculatedBalance = totalReceived - totalAdvances - totalDebtPayments - totalExpenses - totalContractorPayments;
         
         console.log('📊 ملخص الحساب:');
         console.log(`+ الدفعات المستلمة: ${totalReceived}`);
@@ -625,6 +768,8 @@ function displayAdvances(list) {
         let name = '';
         let refunded = 0;
         let remaining = 0;
+        let autoDebtPaid = 0;
+        let overSpent = 0;
         let statusBadge = '';
         
         if (isReceive) {
@@ -635,7 +780,9 @@ function displayAdvances(list) {
             typeText = 'سلفة مدفوعة';
             name = advance.recipientName || '';
             refunded = parseFloat(advance.refundedAmount) || 0;
-            remaining = parseFloat(advance.remainingAmount) || parseFloat(advance.amount);
+            remaining = Number.isFinite(parseFloat(advance.remainingAmount)) ? parseFloat(advance.remainingAmount) : (parseFloat(advance.spendableAmount) || parseFloat(advance.amount) || 0);
+            autoDebtPaid = parseFloat(advance.autoDebtPaid) || 0;
+            overSpent = parseFloat(advance.overSpentAmount) || 0;
             const refundStatus = advance.refundStatus || 'غير مسدد';
             statusBadge = `<span class="status-badge refund-${refundStatus}">${refundStatus}</span>`;
         }
@@ -646,9 +793,9 @@ function displayAdvances(list) {
             <td>${advance.transactionNumber || ''}</td>
             <td><span class="type-badge type-${advance.transactionType}">${typeText}</span></td>
             <td>${name || ''}</td>
-            <td>${window.firebaseConfig.formatCurrency(advance.amount || 0)}</td>
+            <td>${window.firebaseConfig.formatCurrency(advance.amount || 0)}${autoDebtPaid > 0 ? `<br><small style="color:#27ae60">سدد دين تلقائي: ${window.firebaseConfig.formatCurrency(autoDebtPaid)}</small>` : ''}</td>
             <td>${isPayment ? window.firebaseConfig.formatCurrency(refunded) : '-'}</td>
-            <td>${isPayment ? window.firebaseConfig.formatCurrency(remaining) : '-'}</td>
+            <td>${isPayment ? `${window.firebaseConfig.formatCurrency(remaining)}${overSpent > 0 ? `<br><small style="color:#e74c3c">مستحق: ${window.firebaseConfig.formatCurrency(overSpent)}</small>` : ''}` : '-'}</td>
             <td>${formatDate(advance.date)}</td>
             <td>${formatDate(advance.dueDate)}</td>
             <td>${statusBadge}</td>
@@ -656,6 +803,9 @@ function displayAdvances(list) {
             <td>
                 ${isPayment ? `<button class="btn btn-warning btn-sm" onclick="openRefundAdvanceModal('${advance.id}')" ${remaining <= 0 ? 'disabled' : ''}>
                     <i class="fas fa-undo"></i> استرداد
+                </button>` : ''}
+                ${isPayment && overSpent > 0 ? `<button class="btn btn-success btn-sm" onclick="openDebtPaymentModal('${advance.id}')">
+                    <i class="fas fa-hand-holding-usd"></i> تسديد دين
                 </button>` : ''}
                 <button class="btn btn-danger btn-sm" onclick="deleteAdvance('${advance.id}')">
                     <i class="fas fa-trash"></i> حذف
@@ -788,11 +938,22 @@ async function addPaidAdvance(advanceData) {
             advanceData.dueDate = firebase.firestore.Timestamp.fromDate(new Date(advanceData.dueDate));
         }
         
+        const paidFromGeneralBalance = parseFloat(advanceData.amount) || 0;
+        const recipientDebt = await calculateRecipientDebt(projectId, advanceData.recipientName);
+        const autoDebtPaid = Math.min(paidFromGeneralBalance, recipientDebt);
+        const spendableAmount = Math.max(0, paidFromGeneralBalance - autoDebtPaid);
+
         advanceData.type = 'سلف';
         advanceData.transactionType = 'payment';
         advanceData.status = 'مدفوعة';
+        advanceData.originalAmount = paidFromGeneralBalance;
+        advanceData.autoDebtPaid = autoDebtPaid;
+        advanceData.recipientDebtBefore = recipientDebt;
+        advanceData.recipientDebtAfter = Math.max(0, recipientDebt - autoDebtPaid);
+        advanceData.spendableAmount = spendableAmount;
         advanceData.refundedAmount = 0;
-        advanceData.remainingAmount = parseFloat(advanceData.amount);
+        advanceData.remainingAmount = spendableAmount;
+        advanceData.overSpentAmount = 0;
         advanceData.refundStatus = 'غير مسدد';
         advanceData.refunds = [];
         advanceData.createdAt = firebase.firestore.Timestamp.now();
@@ -807,7 +968,7 @@ async function addPaidAdvance(advanceData) {
         // إعادة حساب الرصيد
         await recalculateProjectBalance();
         
-        window.firebaseConfig.showMessage('success', 'تم إضافة السلفة المدفوعة بنجاح');
+        window.firebaseConfig.showMessage('success', autoDebtPaid > 0 ? `تم إضافة السلفة وتسديد ${window.firebaseConfig.formatCurrency(autoDebtPaid)} من دين المخول تلقائياً` : 'تم إضافة السلفة المدفوعة بنجاح');
         closePayAdvanceModal();
         loadAdvances();
         
@@ -1090,6 +1251,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('payAdvanceForm').addEventListener('submit', handlePayAdvanceSubmit);
         const refundForm = document.getElementById('refundAdvanceForm');
         if (refundForm) refundForm.addEventListener('submit', handleRefundAdvanceSubmit);
+        const debtPaymentForm = document.getElementById('debtPaymentForm');
+        if (debtPaymentForm) debtPaymentForm.addEventListener('submit', handleDebtPaymentSubmit);
+        const closeDebtPaymentBtn = document.getElementById('closeDebtPaymentModal');
+        if (closeDebtPaymentBtn) closeDebtPaymentBtn.addEventListener('click', closeDebtPaymentModal);
+        const cancelDebtPaymentBtn = document.getElementById('cancelDebtPaymentBtn');
+        if (cancelDebtPaymentBtn) cancelDebtPaymentBtn.addEventListener('click', closeDebtPaymentModal);
         const closeRefundModalBtn = document.getElementById('closeRefundModal');
         if (closeRefundModalBtn) closeRefundModalBtn.addEventListener('click', closeRefundAdvanceModal);
         const cancelRefundBtn = document.getElementById('cancelRefundBtn');

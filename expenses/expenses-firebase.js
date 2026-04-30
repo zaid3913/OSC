@@ -40,16 +40,38 @@ async function getAdvanceAvailableAmount(projectId, advanceId, excludeExpenseId 
     if (!advance) return 0;
     const spent = await calculateAdvanceSpent(projectId, advanceId, excludeExpenseId);
     const amount = parseFloat(advance.amount) || 0;
+    const autoDebtPaid = parseFloat(advance.autoDebtPaid) || 0;
+    const spendableAmount = Math.max(0, amount - autoDebtPaid);
     const refunded = parseFloat(advance.refundedAmount) || 0;
-    return Math.max(0, amount - refunded - spent);
+    return Math.max(0, spendableAmount - refunded - spent);
 }
 
 async function syncAdvanceRemainingAmount(projectId, advanceId) {
     const advance = await getAdvanceById(advanceId);
     if (!advance) return;
-    const available = await getAdvanceAvailableAmount(projectId, advanceId);
+    const spent = await calculateAdvanceSpent(projectId, advanceId);
+    const amount = parseFloat(advance.amount) || 0;
+    const autoDebtPaid = parseFloat(advance.autoDebtPaid) || 0;
+    const spendableAmount = Math.max(0, amount - autoDebtPaid);
+    const refunded = parseFloat(advance.refundedAmount) || 0;
+    const rawRemaining = spendableAmount - refunded - spent;
+    const remainingAmount = Math.max(0, rawRemaining);
+    const overSpentAmount = Math.max(0, -rawRemaining);
+    let refundStatus = 'غير مسدد';
+    if (overSpentAmount > 0) {
+        refundStatus = 'مستحق للمخول';
+    } else if (refunded > 0 && remainingAmount > 0) {
+        refundStatus = 'مسدد جزئياً';
+    } else if (remainingAmount <= 0) {
+        refundStatus = 'مسدد بالكامل';
+    }
+
     await window.firebaseConfig.db.collection('projects').doc(projectId).collection('advances').doc(advanceId).update({
-        remainingAmount: available,
+        spentAmount: spent,
+        spendableAmount,
+        remainingAmount,
+        overSpentAmount,
+        refundStatus,
         updatedAt: firebase.firestore.Timestamp.now()
     });
 }
@@ -85,7 +107,7 @@ function handleAdvanceRecipientChange() {
     const selected = recipientsList.find(r => r.id === advanceSelect.value);
     if (selected) {
         recipientInput.value = selected.name || '';
-        hint.textContent = `المتبقي الحالي: ${window.firebaseConfig.formatCurrency(selected.remainingAmount || 0)}`;
+        hint.textContent = `المتبقي الحالي: ${window.firebaseConfig.formatCurrency(selected.remainingAmount || 0)}${(selected.overSpentAmount || 0) > 0 ? ' | مستحق للمخول: ' + window.firebaseConfig.formatCurrency(selected.overSpentAmount || 0) : ''}`;
     } else {
         hint.textContent = '';
     }
@@ -104,7 +126,7 @@ function populateAdvanceRecipientSelect() {
         if (recipient.formattedDate) details.push(recipient.formattedDate);
 
         const detailsText = details.length ? ` (${details.join(' - ')})` : '';
-        option.textContent = `${recipient.name}${detailsText} - المتبقي ${window.firebaseConfig.formatCurrency(recipient.remainingAmount || 0)}`;
+        option.textContent = `${recipient.name}${detailsText} - المتبقي ${window.firebaseConfig.formatCurrency(recipient.remainingAmount || 0)}${(recipient.overSpentAmount || 0) > 0 ? ' - مستحق ' + window.firebaseConfig.formatCurrency(recipient.overSpentAmount || 0) : ''}`;
         select.appendChild(option);
     });
 }
@@ -756,6 +778,9 @@ async function loadRecipientsList() {
                 originalAmount: amount,
                 totalAdvances: amount,
                 remainingAmount: safeRemaining,
+                overSpentAmount: parseFloat(advance.overSpentAmount) || 0,
+                spendableAmount: parseFloat(advance.spendableAmount) || Math.max(0, amount - (parseFloat(advance.autoDebtPaid) || 0)),
+                autoDebtPaid: parseFloat(advance.autoDebtPaid) || 0,
                 date: advance.date || null,
                 formattedDate
             });
@@ -897,15 +922,7 @@ async function addExpense(expenseData) {
         expenseData.fundSource = normalizeFundSource(expenseData.fundSource);
         expenseData.advanceId = expenseData.fundSource === 'advance' ? (expenseData.advanceId || null) : null;
 
-        if (expenseData.fundSource === 'advance') {
-            const available = await getAdvanceAvailableAmount(projectId, expenseData.advanceId);
-            if ((parseFloat(expenseData.amount) || 0) > available) {
-                hideLoading();
-                window.firebaseConfig.showMessage('error', 'مبلغ المصروف أكبر من المتبقي في سلفة المخول');
-                return;
-            }
-        }
-
+        // مسموح أن يتجاوز المصروف المتبقي بالسلفة؛ الزيادة تتحول إلى مستحق للمخول.
         expenseData.createdAt = firebase.firestore.Timestamp.now();
         expenseData.updatedAt = firebase.firestore.Timestamp.now();
 
@@ -993,15 +1010,7 @@ async function updateExpense(expenseId, expenseData) {
         expenseData.fundSource = normalizeFundSource(expenseData.fundSource);
         expenseData.advanceId = expenseData.fundSource === 'advance' ? (expenseData.advanceId || null) : null;
 
-        if (expenseData.fundSource === 'advance') {
-            const available = await getAdvanceAvailableAmount(projectId, expenseData.advanceId, expenseId);
-            if ((parseFloat(expenseData.amount) || 0) > available) {
-                hideLoading();
-                window.firebaseConfig.showMessage('error', 'مبلغ المصروف أكبر من المتبقي في سلفة المخول');
-                return;
-            }
-        }
-
+        // مسموح أن يتجاوز المصروف المتبقي بالسلفة؛ الزيادة تتحول إلى مستحق للمخول.
         expenseData.updatedAt = firebase.firestore.Timestamp.now();
 
         if (expenseData.date) {
@@ -1459,15 +1468,7 @@ async function markExpenseAsPaid(expenseId) {
             return;
         }
 
-        if ((expense.fundSource || 'general') === 'advance' && expense.advanceId) {
-            const available = await getAdvanceAvailableAmount(projectId, expense.advanceId, expenseId);
-            if (amount > available) {
-                hideLoading();
-                window.firebaseConfig.showMessage('error', 'لا يمكن التسديد لأن المبلغ يتجاوز المتبقي من السلفة');
-                return;
-            }
-        }
-
+        // مسموح أن يتجاوز التسديد المتبقي بالسلفة؛ الزيادة تتحول إلى مستحق للمخول.
         // 1) تحديث الحالة إلى مسدد
         await expenseRef.update({
             paymentStatus: 'paid',
