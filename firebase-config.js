@@ -2,12 +2,12 @@
 
 // إعداد Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyAaepsjjdbIxdFOwCO9JpnjR5z0ZGqyyW0",
-  authDomain: "dr-zaid-863b3.firebaseapp.com",
-  projectId: "dr-zaid-863b3",
-  storageBucket: "dr-zaid-863b3.firebasestorage.app",
-  messagingSenderId: "898621862330",
-  appId: "1:898621862330:web:d6beafb866407dccaaad83"
+  apiKey: "AIzaSyAn_j0i_-c2xmpDu1xQFbpSloWbm_T-6cs",
+  authDomain: "test-ba6eb.firebaseapp.com",
+  projectId: "test-ba6eb",
+  storageBucket: "test-ba6eb.appspot.com",
+  messagingSenderId: "1032465837780",
+  appId: "1:1032465837780:web:e3b623abcd42712b215541"
 };
 
 // تهيئة Firebase إذا لم يكن مهيأ مسبقاً
